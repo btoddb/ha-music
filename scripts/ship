@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+#
+# Cut a GitHub release for this repo.
+#
+# The @claude ship command merges the PR, checks out main, then calls this
+# script. You can also run it directly from a clean main branch.
+#
+# Usage:
+#   scripts/ship --bump-patch            # pre-release; increment manifest X.Y.Z to X.Y.(Z+1)
+#   scripts/ship --bump-minor            # pre-release; increment manifest X.Y.Z to X.(Y+1).0
+#   scripts/ship --bump-major            # pre-release; increment manifest X.Y.Z to (X+1).0.0
+#   scripts/ship --public-release --bump-minor
+#                                         # full release; label: latest, title: <tag>
+#   scripts/ship --dry-run --bump-patch  # print every command, change nothing
+#
+# Version is resolved from custom_components/btoddb_ha_music/manifest.json.
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MANIFEST="$REPO_ROOT/custom_components/btoddb_ha_music/manifest.json"
+
+PUBLIC_RELEASE=false
+DRY_RUN=false
+BUMP=""
+BUMP_SET=false
+
+die() {
+    echo "ship: $*" >&2
+    exit 1
+}
+
+usage() {
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+set_bump() {
+    if "$BUMP_SET"; then
+        echo "ship: choose only one bump flag" >&2
+        exit 2
+    fi
+
+    BUMP="$1"
+    BUMP_SET=true
+}
+
+run() {
+    if "$DRY_RUN"; then
+        echo "DRY-RUN: $*"
+    else
+        echo "+ $*"
+        "$@"
+    fi
+}
+
+next_version() {
+    local current major minor patch
+
+    current=$(jq -r '.version // empty' "$MANIFEST")
+    if [[ ! "$current" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+        die "manifest version '$current' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
+    fi
+
+    major="${BASH_REMATCH[1]}"
+    minor="${BASH_REMATCH[2]}"
+    patch="${BASH_REMATCH[3]}"
+
+    case "$1" in
+        patch)
+            echo "v${major}.${minor}.$((10#$patch + 1))"
+            ;;
+        minor)
+            echo "v${major}.$((10#$minor + 1)).0"
+            ;;
+        major)
+            echo "v$((10#$major + 1)).0.0"
+            ;;
+        *)
+            die "unknown bump type '$1'"
+            ;;
+    esac
+}
+
+update_manifest() {
+    if "$DRY_RUN"; then
+        echo "DRY-RUN: update $MANIFEST version to $VERSION_TAG"
+        return
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    jq --arg v "$VERSION_TAG" '.version = $v' "$MANIFEST" > "$tmp"
+    mv "$tmp" "$MANIFEST"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --public-release)
+            PUBLIC_RELEASE=true
+            ;;
+        --bump-patch)
+            set_bump patch
+            ;;
+        --bump-minor)
+            set_bump minor
+            ;;
+        --bump-major)
+            set_bump major
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        --force)
+            # The workflow consumes --force before invoking this script; tolerate it
+            # if forwarded so release creation remains deterministic.
+            ;;
+        *)
+            echo "ship: unknown argument '$1' (try --help)" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if ! "$BUMP_SET"; then
+    die "choose a version bump: --bump-patch, --bump-minor, or --bump-major"
+fi
+
+VERSION_TAG="$(next_version "$BUMP")"
+echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
+
+if [[ ! "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    die "version tag '$VERSION_TAG' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
+fi
+
+CURRENT_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+    die "must be on 'main' (currently on '$CURRENT_BRANCH')"
+fi
+
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
+    echo "ship: working tree is not clean - commit or stash first" >&2
+    git -C "$REPO_ROOT" status --short
+    exit 1
+fi
+
+if git -C "$REPO_ROOT" tag --list "$VERSION_TAG" | grep -q .; then
+    die "tag '$VERSION_TAG' already exists locally"
+fi
+
+if git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/$VERSION_TAG" | grep -q .; then
+    die "tag '$VERSION_TAG' already exists on remote"
+fi
+
+# Build and bump the Lovelace card before the integration manifest is bumped.
+run "$REPO_ROOT/scripts/deploy.sh"
+
+update_manifest
+
+# Commit (manifest bump + card build artifacts from deploy.sh:
+# www/ bundle, card/package.json, card/src/index.ts). The tree was verified
+# clean above, so everything dirty now comes from this release.
+run git -C "$REPO_ROOT" add -A
+run git -C "$REPO_ROOT" commit -m "release $VERSION_TAG"
+
+run git -C "$REPO_ROOT" tag "$VERSION_TAG"
+
+run git -C "$REPO_ROOT" push origin main
+run git -C "$REPO_ROOT" push origin "$VERSION_TAG"
+
+if [[ "$PUBLIC_RELEASE" == true ]]; then
+    echo "Cutting public release $VERSION_TAG:"
+    run gh release create "$VERSION_TAG" \
+        --title "$VERSION_TAG" \
+        --latest \
+        --generate-notes
+else
+    echo "Cutting pre-release $VERSION_TAG:"
+    run gh release create "$VERSION_TAG" \
+        --title "$VERSION_TAG-beta" \
+        --prerelease \
+        --generate-notes
+fi
+
+echo "Done. Release '$VERSION_TAG' is live."

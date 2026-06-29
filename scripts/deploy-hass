@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+REMOTE="${HASS_REMOTE:-root@hass.homelab.lan}"
+CUSTOM_COMPONENT="btoddb_ha_music"
+REMOTE_PATH="/homeassistant/custom_components/${CUSTOM_COMPONENT}"
+
+echo "Deploying to ${REMOTE}:${REMOTE_PATH} ..."
+
+rsync -av --delete \
+    --exclude '__pycache__' \
+    --exclude '*.pyc' \
+    --exclude 'node_modules' \
+    --exclude 'tests' \
+    custom_components/${CUSTOM_COMPONENT}/ \
+    "${REMOTE}:${REMOTE_PATH}/"
+
+echo "Done. Restart Home Assistant to apply changes."

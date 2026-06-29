@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run Home Assistant's Hassfest validation against the local working tree, using
+# the same Docker image as .github/workflows/validate.yml's hassfest job. This
+# catches manifest/dependency/translation problems before pushing.
+#
+# Usage: scripts/validate
+set -euo pipefail
+
+# Matches the image the home-assistant/actions/hassfest action runs in CI.
+HASSFEST_IMAGE="ghcr.io/home-assistant/hassfest:latest"
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "error: docker is required but not found on PATH" >&2
+  exit 1
+fi
+
+echo "==> Hassfest validation ($HASSFEST_IMAGE)"
+docker run --rm -v "${repo_root}://github/workspace" "$HASSFEST_IMAGE"

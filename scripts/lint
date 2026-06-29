@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+# Lint/format only our integration. Everything else under custom_components/ is a
+# vendored third-party integration kept for local testing and must not be touched.
+ruff format custom_components/btoddb_ha_music
+ruff check custom_components/btoddb_ha_music --fix
