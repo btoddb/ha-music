@@ -1,0 +1,10 @@
+{
+  "All Speakers": "media_player.all_speakers",
+  "Main Floor": "media_player.main_floor_speakers",
+  "Upstairs": "media_player.upstairs_speakers",
+  "Living Room": "media_player.living_room_speaker",
+  "Kitchen": "media_player.kitchen_speaker",
+  "Office": "media_player.office_speaker",
+  "Garage": "media_player.garage_speaker",
+  "Bedroom": "media_player.todd_s_bedroom_speaker"
+}
