@@ -4,7 +4,7 @@
 > Delete the guidance lines once filled in.
 
 **Status:** in progress | proposed | shipped
-**Touches:** time-based | location-based | card-ux  *(which spec area this lands in)*
+**Touches:** engine | card-ux  *(which spec area this lands in)*
 
 ## Goal
 

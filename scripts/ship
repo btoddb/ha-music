@@ -13,13 +13,15 @@
 #                                         # full release; label: latest, title: <tag>
 #   scripts/ship --dry-run --bump-patch  # print every command, change nothing
 #
-# Version is resolved from custom_components/btoddb_ha_music/manifest.json.
+# Version is resolved from custom_components/<repo>/manifest.json.
 #
 set -euo pipefail
 
+COMPONENT_INSTALL_DIR=btoddb_ha_music
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MANIFEST="$REPO_ROOT/custom_components/btoddb_ha_music/manifest.json"
+MANIFEST="$REPO_ROOT/custom_components/${COMPONENT_INSTALL_DIR}/manifest.json"
 
 PUBLIC_RELEASE=false
 DRY_RUN=false
@@ -158,11 +160,11 @@ if git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/$VERSION_TAG" | grep -
 fi
 
 # Build and bump the Lovelace card before the integration manifest is bumped.
-run "$REPO_ROOT/scripts/deploy.sh"
+run "$REPO_ROOT/scripts/deploy-card"
 
 update_manifest
 
-# Commit (manifest bump + card build artifacts from deploy.sh:
+# Commit (manifest bump + card build artifacts from deploy-card:
 # www/ bundle, card/package.json, card/src/index.ts). The tree was verified
 # clean above, so everything dirty now comes from this release.
 run git -C "$REPO_ROOT" add -A

@@ -1,6 +1,6 @@
 # Requirements
 
-This folder is the **functional source of truth** for `room_climate_controller`.
+This folder is the **functional source of truth** for this HA integration.
 It is written for both humans and the AI agent. If the code and a `spec/` file
 disagree, that's a bug in one of them — say so rather than guessing.
 
