@@ -1,0 +1,41 @@
+play_radio_station:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+    station:
+      example: "KEXP"
+      selector:
+        text:
+    speakers:
+      example: "Kitchen"
+      selector:
+        object:
+shuffle_play_playlist:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+    playlist:
+      example: "Dinner"
+      selector:
+        text:
+    speakers:
+      example: "Whole House"
+      selector:
+        object:
+stop_music:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+    speakers:
+      example: "Whole House"
+      selector:
+        object:

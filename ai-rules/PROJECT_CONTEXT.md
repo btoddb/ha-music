@@ -6,18 +6,30 @@ This file provides guidance to AI coding agents when working with code in this r
 
 ## Project Overview
 
-This repo is a single Home Assistant **custom integration**, `btoddb_ha_reminders`
-(HACS-installable), that allows the user to setup reminders, and have HA remind them at the specified time.
+This repo is a single Home Assistant **custom integration**, `btoddb_ha_music`
+(HACS-installable), that lets Home Assistant dashboards choose speaker groups,
+play radio stations, shuffle playlists, stop playback, and show now-playing
+metadata.
 
 The repo is based on the `integration_blueprint` dev scaffold: `config/` is a throwaway
 HA instance for local testing, `scripts/` holds dev helpers, and `requirements.txt`
 pins the HA/lint toolchain.
 
-Every directory under `custom_components/` **except `btoddb_ha_reminders`** is a
+Every directory under `custom_components/` **except `btoddb_ha_music`** is a
 **vendored third-party integration** kept only for local testing (currently
 `custom_components/dreo/`). Never modify any of them. If any command — including
 `scripts/lint` — leaves changes under one of these directories, revert them; never
-commit a diff outside `btoddb_ha_reminders`.
+commit a diff outside `btoddb_ha_music`.
+
+## Codex rules
+
+- Always read and follow every file under `ai-rules/` before changing code.
+- Never work on `main`; create a fresh task branch before edits.
+- Keep implementation changes for this repo inside
+  `custom_components/btoddb_ha_music/` unless repository metadata, docs, tests, or
+  rule files must be updated for the requested task.
+- Do not change, create, or delete anything in the user's production Home
+  Assistant instance.
 
 ## Implementation details
 
@@ -42,9 +54,9 @@ commit a diff outside `btoddb_ha_reminders`.
 - **Hassfest locally (Docker):** `scripts/validate` runs CI's Hassfest check
   (`ghcr.io/home-assistant/hassfest`) against the working tree — use it to catch
   manifest/dependency/translation errors before pushing. Requires Docker.
-- **Build the card:** `scripts/deploy.sh` builds, bumps the version, and copies
+- **Build the card:** `scripts/deploy-card.sh` builds, bumps the version, and copies
   into `www/`. Edit the TypeScript source at
-  `custom_components/btoddb_ha_reminders/card/src/*.ts` — never hand-edit the
+  `custom_components/btoddb_ha_music/card/src/*.ts` — never hand-edit the
   generated `www/*.js` bundle. (Card-specific guidance lives in that folder's
   `CLAUDE.md`.)
 
@@ -54,7 +66,7 @@ There are **two independent version numbers** — never hand-edit either:
 
 - **Integration:** `manifest.json` (`"version": "vX.Y.Z"` — the leading `v` is
   intentional). Bumped only by `scripts/create-release.sh`.
-- **Card:** `card/package.json` (plain `X.Y.Z`). Bumped only by `scripts/deploy.sh`,
+- **Card:** `card/package.json` (plain `X.Y.Z`). Bumped only by `scripts/deploy-card.sh`,
   which also syncs the console banner in `card/src/index.ts`.
 
 <!--
@@ -152,7 +164,7 @@ out, so GitHub CLI never prompts or fails for missing required input in CI.
 
 ### Revision (Sonnet)
 - `@claude revise <feedback>` runs on an **open PR** and is the only PR command that changes code. It checks out the PR's head branch, applies the requested changes, and commits **to that same branch** — it does not open a new PR.
-- It shares `implement`'s toolset (the `IMPL_TOOLS` list in the workflow + the repo's `implement-allowed-tools`) and runs the same language **setup + install** steps, so lint, tests, `scripts/deploy.sh`, and `npm` are all available while iterating.
+- It shares `implement`'s toolset (the `IMPL_TOOLS` list in the workflow + the repo's `implement-allowed-tools`) and runs the same language **setup + install** steps, so lint, tests, `scripts/deploy-card.sh`, and `npm` are all available while iterating.
 - It can file follow-up issues with `gh issue create` for work discovered while revising that does not belong in the current PR.
 - **constraint** Read the PR thread and the triggering comment first; make the change the feedback asks for, then push it to the PR branch. Don't open a second PR for the same work.
 

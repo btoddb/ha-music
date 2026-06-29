@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BToddB HA Music",
+        "description": "Configure JSON mappings for speaker groups, radio stations, and playlists.",
+        "data": {
+          "speakers": "Speaker groups",
+          "radio_stations": "Radio stations",
+          "playlists": "Playlists"
+        }
+      }
+    },
+    "error": {
+      "invalid_mapping": "Enter a valid JSON object. Speaker values can be a string or list of strings; radio station and playlist values must be strings."
+    },
+    "abort": {
+      "already_configured": "BToddB HA Music is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BToddB HA Music options",
+        "description": "Update JSON mappings for speaker groups, radio stations, and playlists.",
+        "data": {
+          "speakers": "Speaker groups",
+          "radio_stations": "Radio stations",
+          "playlists": "Playlists"
+        }
+      }
+    },
+    "error": {
+      "invalid_mapping": "Enter a valid JSON object. Speaker values can be a string or list of strings; radio station and playlist values must be strings."
+    }
+  },
+  "entity": {
+    "select": {
+      "speaker_group": {
+        "name": "Speaker group"
+      },
+      "radio_station": {
+        "name": "Radio station"
+      },
+      "playlist": {
+        "name": "Playlist"
+      }
+    },
+    "button": {
+      "play_radio_station": {
+        "name": "Play radio station"
+      },
+      "shuffle_play_playlist": {
+        "name": "Shuffle play playlist"
+      },
+      "stop_music": {
+        "name": "Stop music"
+      }
+    },
+    "sensor": {
+      "now_playing": {
+        "name": "Now playing"
+      }
+    }
+  }
+}

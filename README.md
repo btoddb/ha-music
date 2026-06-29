@@ -14,7 +14,7 @@ A custom component to bridge the gap between HA and Music Assistant(MA).  The go
 ### HACS (recommended)
 
 1. HACS → ⋮ → **Custom repositories** → add this repo's URL, category **Integration**.
-2. Install **Reminders**, then restart Home Assistant.
+2. Install **BToddB HA Music**, then restart Home Assistant.
 
 ### Manual
 
@@ -23,14 +23,14 @@ and restart.
 
 ### Configure
 
-**Settings → Devices & Services → Add Integration → Reminders.** The setup picker
-is a dropdown of every **notify service** registered in your HA instance — pick the
-one you want due reminders delivered to. You can change it later from the integration's
-**Configure** button.
+**Settings → Devices & Services → Add Integration → BToddB HA Music.** Configure
+the speaker group, radio station, and playlist mappings as JSON objects. Speaker
+groups map names to one `media_player` entity id or a list of `media_player`
+entity ids. Radio stations and playlists map names to the media content id that
+your media player or Music Assistant instance can play.
 
 ## How it behaves (spec)
 
 The full, ID'd behavior spec lives in [`requirements/spec/.`](requirements/spec/.).
 
 ## Roadmap
-
