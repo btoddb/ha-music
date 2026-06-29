@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "BToddB HA Music",
-        "description": "Configure JSON mappings for speaker groups, radio stations, and playlists.",
+        "description": "Configure JSON mappings. Speaker values are music_assistant media_player entity ids (a string, or a list to target several). Radio station and playlist values are Music Assistant URIs (e.g. radiobrowser://radio/... or spotify://playlist/...).",
         "data": {
           "speakers": "Speaker groups",
           "radio_stations": "Radio stations",
@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "BToddB HA Music options",
-        "description": "Update JSON mappings for speaker groups, radio stations, and playlists.",
+        "description": "Update JSON mappings. Speaker values are music_assistant media_player entity ids (a string, or a list to target several). Radio station and playlist values are Music Assistant URIs (e.g. radiobrowser://radio/... or spotify://playlist/...).",
         "data": {
           "speakers": "Speaker groups",
           "radio_stations": "Radio stations",

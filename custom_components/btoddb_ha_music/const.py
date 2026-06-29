@@ -21,5 +21,9 @@ SERVICE_STOP_MUSIC = "stop_music"
 
 PLATFORMS = (Platform.SELECT, Platform.BUTTON, Platform.SENSOR)
 
-MEDIA_CONTENT_TYPE_RADIO = "music"
-MEDIA_CONTENT_TYPE_PLAYLIST = "playlist"
+# Music Assistant is the playback backend: the target speakers are all
+# music_assistant media_player entities and the configured media values are
+# Music Assistant URIs (e.g. spotify://playlist/..., radiobrowser://radio/...).
+MUSIC_ASSISTANT_DOMAIN = "music_assistant"
+SERVICE_MA_PLAY_MEDIA = "play_media"
+MA_ENQUEUE_REPLACE = "replace"

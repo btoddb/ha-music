@@ -1,0 +1,32 @@
+# artifacts
+__pycache__
+.pytest*
+*.egg-info
+*/build/*
+*/dist/*
+node_modules
+
+# card build output (intermediate; deployed copy lives in www/)
+custom_components/btoddb_ha_music/card/btoddb-ha-reminders.js
+custom_components/btoddb_ha_music/card/btoddb-ha-reminders.js.map
+
+# local stuff
+devcontainer-lock.json
+.devcontainer-lock.json
+
+# misc
+.coverage
+.vscode
+coverage.xml
+.ruff_cache
+
+# Home Assistant configuration
+config/*
+!config/configuration.yaml
+
+# Home Assistant config backups (throwaway runtime state: .storage, db, logs, cache)
+config.backup*/
+
+# don't commit extra custom components used for testing
+custom_components/*
+!custom_components/btoddb_ha_music

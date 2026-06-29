@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from homeassistant.components.button import ButtonEntity
 
 from . import MusicConfigEntry
-from .controller import MusicController, MusicRestoreEntity
+from .controller import MusicController, MusicEntity
 
 
 async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -> None:
@@ -41,7 +41,7 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
     )
 
 
-class MusicActionButton(MusicRestoreEntity, ButtonEntity):
+class MusicActionButton(MusicEntity, ButtonEntity):
     """Button that runs a music action."""
 
     def __init__(

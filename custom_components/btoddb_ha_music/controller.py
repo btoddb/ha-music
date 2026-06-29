@@ -7,11 +7,8 @@ from collections.abc import Callable, Iterable
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_ALBUM_NAME,
     ATTR_MEDIA_ARTIST,
-    ATTR_MEDIA_CONTENT_ID,
-    ATTR_MEDIA_CONTENT_TYPE,
     ATTR_MEDIA_TITLE,
     DOMAIN as MEDIA_PLAYER_DOMAIN,
-    SERVICE_PLAY_MEDIA,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -21,15 +18,16 @@ from homeassistant.const import (
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_PLAYLISTS,
     CONF_RADIO_STATIONS,
     CONF_SPEAKERS,
-    MEDIA_CONTENT_TYPE_PLAYLIST,
-    MEDIA_CONTENT_TYPE_RADIO,
+    MA_ENQUEUE_REPLACE,
+    MUSIC_ASSISTANT_DOMAIN,
+    SERVICE_MA_PLAY_MEDIA,
 )
 from .models import NamedMapping, NowPlaying, parse_named_mapping
 
@@ -71,12 +69,6 @@ class MusicController:
                 entity_ids.update(value)
         return entity_ids
 
-    @property
-    def entity_category(self) -> EntityCategory | None:
-        """Return no entity category so dashboard entities are easy to find."""
-
-        return None
-
     @callback
     def async_add_listener(self, listener: SelectionListener) -> CALLBACK_TYPE:
         """Register a listener for selection changes."""
@@ -113,22 +105,14 @@ class MusicController:
         """Play the selected or requested radio station."""
 
         entity_ids = self._resolve_speakers(speakers)
-        media_content_id = self._resolve_media(
+        media_id = self._resolve_media(
             station,
             selected=self.selected_radio_station,
             mapping=self.radio_stations,
             kind="radio station",
         )
-        await self.hass.services.async_call(
-            MEDIA_PLAYER_DOMAIN,
-            SERVICE_PLAY_MEDIA,
-            {
-                "entity_id": entity_ids,
-                ATTR_MEDIA_CONTENT_ID: media_content_id,
-                ATTR_MEDIA_CONTENT_TYPE: MEDIA_CONTENT_TYPE_RADIO,
-            },
-            blocking=True,
-        )
+        await self._async_set_shuffle(entity_ids, shuffle=False)
+        await self._async_play_media(entity_ids, media_id)
 
     async def async_shuffle_play_playlist(
         self, *, playlist: str | None = None, speakers: str | list[str] | None = None
@@ -136,25 +120,35 @@ class MusicController:
         """Shuffle play the selected or requested playlist."""
 
         entity_ids = self._resolve_speakers(speakers)
-        media_content_id = self._resolve_media(
+        media_id = self._resolve_media(
             playlist,
             selected=self.selected_playlist,
             mapping=self.playlists,
             kind="playlist",
         )
+        await self._async_set_shuffle(entity_ids, shuffle=True)
+        await self._async_play_media(entity_ids, media_id)
+
+    async def _async_set_shuffle(self, entity_ids: list[str], *, shuffle: bool) -> None:
+        """Set the shuffle mode on the target players before playback."""
+
         await self.hass.services.async_call(
             MEDIA_PLAYER_DOMAIN,
             SERVICE_SHUFFLE_SET,
-            {"entity_id": entity_ids, "shuffle": True},
+            {"entity_id": entity_ids, "shuffle": shuffle},
             blocking=True,
         )
+
+    async def _async_play_media(self, entity_ids: list[str], media_id: str) -> None:
+        """Replace the queue and play a Music Assistant media URI."""
+
         await self.hass.services.async_call(
-            MEDIA_PLAYER_DOMAIN,
-            SERVICE_PLAY_MEDIA,
+            MUSIC_ASSISTANT_DOMAIN,
+            SERVICE_MA_PLAY_MEDIA,
             {
                 "entity_id": entity_ids,
-                ATTR_MEDIA_CONTENT_ID: media_content_id,
-                ATTR_MEDIA_CONTENT_TYPE: MEDIA_CONTENT_TYPE_PLAYLIST,
+                "media_id": media_id,
+                "enqueue": MA_ENQUEUE_REPLACE,
             },
             blocking=True,
         )
@@ -162,9 +156,19 @@ class MusicController:
     async def async_stop_music(
         self, *, speakers: str | list[str] | None = None
     ) -> None:
-        """Stop playback on the selected or requested speakers."""
+        """Stop playback.
 
-        entity_ids = self._resolve_speakers(speakers)
+        With no target this stops every configured speaker, so "stop whatever
+        is playing" works regardless of which group is currently selected. A
+        specific target can still be passed via the service call.
+        """
+
+        if speakers is None:
+            entity_ids = sorted(self.all_media_player_entity_ids)
+            if not entity_ids:
+                raise HomeAssistantError("No speakers are configured")
+        else:
+            entity_ids = self._resolve_speakers(speakers)
         await self.hass.services.async_call(
             MEDIA_PLAYER_DOMAIN,
             SERVICE_MEDIA_STOP,
@@ -183,12 +187,13 @@ class MusicController:
             if state is None or state.state == STATE_UNAVAILABLE:
                 continue
 
-            artist = state.attributes.get(ATTR_MEDIA_ARTIST) or "unknown"
-            title = state.attributes.get(ATTR_MEDIA_TITLE) or "unknown"
+            artist = state.attributes.get(ATTR_MEDIA_ARTIST)
+            title = state.attributes.get(ATTR_MEDIA_TITLE)
             album = state.attributes.get(ATTR_MEDIA_ALBUM_NAME)
-            if artist == "unknown" and title == "unknown":
-                return NowPlaying("unknown", entity_id, artist, title, album)
-            return NowPlaying(f"{artist} - {title}", entity_id, artist, title, album)
+            display = " - ".join(part for part in (artist, title) if part) or "unknown"
+            return NowPlaying(
+                display, entity_id, artist or "unknown", title or "unknown", album
+            )
 
         return NowPlaying("unknown", None, "unknown", "unknown", None)
 
@@ -267,7 +272,7 @@ def _validate_entity_ids(entity_ids: Iterable[str], *, kind: str) -> list[str]:
     return normalized
 
 
-class MusicRestoreEntity(RestoreEntity):
+class MusicEntity(Entity):
     """Base class for entities backed by the controller."""
 
     _attr_has_entity_name = True
@@ -281,3 +286,7 @@ class MusicRestoreEntity(RestoreEntity):
             "name": "BToddB HA Music",
         }
         self._attr_unique_id = f"{controller.entry.entry_id}_{key}"
+
+
+class MusicRestoreEntity(MusicEntity, RestoreEntity):
+    """Base class for entities that restore their state across restarts."""

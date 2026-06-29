@@ -1,6 +1,7 @@
 {
   "domain": "btoddb_ha_music",
   "name": "BToddB HA Music",
+  "after_dependencies": ["music_assistant"],
   "codeowners": ["@btoddb"],
   "config_flow": true,
   "dependencies": ["media_player"],

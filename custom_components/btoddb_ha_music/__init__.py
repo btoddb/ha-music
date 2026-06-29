@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import SERVICE_MEDIA_STOP, SERVICE_SHUFFLE_SET, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -169,7 +168,4 @@ def _controller_from_call(hass: HomeAssistant, call: ServiceCall) -> MusicContro
 __all__ = [
     "ATTR_CONFIG_ENTRY",
     "MusicConfigEntry",
-    "Platform",
-    "SERVICE_MEDIA_STOP",
-    "SERVICE_SHUFFLE_SET",
 ]

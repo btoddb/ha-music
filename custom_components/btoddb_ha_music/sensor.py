@@ -7,7 +7,7 @@ from homeassistant.core import Event, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from . import MusicConfigEntry
-from .controller import MusicController, MusicRestoreEntity
+from .controller import MusicController, MusicEntity
 
 
 async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -> None:
@@ -16,7 +16,7 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
     async_add_entities([NowPlayingSensor(entry.runtime_data)])
 
 
-class NowPlayingSensor(MusicRestoreEntity, SensorEntity):
+class NowPlayingSensor(MusicEntity, SensorEntity):
     """Expose now playing metadata for the selected speaker group."""
 
     _attr_translation_key = "now_playing"
@@ -26,19 +26,15 @@ class NowPlayingSensor(MusicRestoreEntity, SensorEntity):
         """Initialize the sensor."""
 
         super().__init__(controller, "now_playing")
+        self._update_now_playing()
 
-    @property
-    def native_value(self) -> str:
-        """Return the now playing state."""
-
-        return self._controller.now_playing().state
-
-    @property
-    def extra_state_attributes(self) -> dict[str, str | None]:
-        """Return now playing details."""
+    @callback
+    def _update_now_playing(self) -> None:
+        """Read current media metadata once and cache it on the entity."""
 
         now_playing = self._controller.now_playing()
-        return {
+        self._attr_native_value = now_playing.state
+        self._attr_extra_state_attributes = {
             "player_entity_id": now_playing.player_entity_id,
             "artist": now_playing.artist,
             "title": now_playing.title,
@@ -49,9 +45,7 @@ class NowPlayingSensor(MusicRestoreEntity, SensorEntity):
         """Subscribe to selected speaker and media player changes."""
 
         await super().async_added_to_hass()
-        self.async_on_remove(
-            self._controller.async_add_listener(self.async_write_ha_state)
-        )
+        self.async_on_remove(self._controller.async_add_listener(self._handle_update))
         entity_ids = self._controller.all_media_player_entity_ids
         if entity_ids:
             self.async_on_remove(
@@ -63,7 +57,15 @@ class NowPlayingSensor(MusicRestoreEntity, SensorEntity):
             )
 
     @callback
+    def _handle_update(self) -> None:
+        """Refresh cached metadata when the selected option changes."""
+
+        self._update_now_playing()
+        self.async_write_ha_state()
+
+    @callback
     def _handle_state_change(self, event: Event) -> None:
         """Update the sensor when a media player changes."""
 
+        self._update_now_playing()
         self.async_write_ha_state()
