@@ -6,14 +6,16 @@
 # script. You can also run it directly from a clean main branch.
 #
 # Usage:
+#   scripts/ship --version v1.2.3        # pre-release; set manifest version explicitly
 #   scripts/ship --bump-patch            # pre-release; increment manifest X.Y.Z to X.Y.(Z+1)
 #   scripts/ship --bump-minor            # pre-release; increment manifest X.Y.Z to X.(Y+1).0
 #   scripts/ship --bump-major            # pre-release; increment manifest X.Y.Z to (X+1).0.0
-#   scripts/ship --public-release --bump-minor
+#   scripts/ship --public-release --version v1.2.3
 #                                         # full release; label: latest, title: <tag>
-#   scripts/ship --dry-run --bump-patch  # print every command, change nothing
+#   scripts/ship --dry-run --version v1.2.3
+#                                         # print every command, change nothing
 #
-# Version is resolved from custom_components/<repo>/manifest.json.
+# Bump versions are resolved from custom_components/<repo>/manifest.json.
 #
 set -euo pipefail
 
@@ -26,7 +28,8 @@ MANIFEST="$REPO_ROOT/custom_components/${COMPONENT_INSTALL_DIR}/manifest.json"
 PUBLIC_RELEASE=false
 DRY_RUN=false
 BUMP=""
-BUMP_SET=false
+VERSION_TAG=""
+VERSION_SET=false
 
 die() {
     echo "ship: $*" >&2
@@ -38,13 +41,28 @@ usage() {
 }
 
 set_bump() {
-    if "$BUMP_SET"; then
-        echo "ship: choose only one bump flag" >&2
+    if "$VERSION_SET"; then
+        echo "ship: choose only one version option" >&2
         exit 2
     fi
 
     BUMP="$1"
-    BUMP_SET=true
+    VERSION_SET=true
+}
+
+set_version() {
+    if "$VERSION_SET"; then
+        echo "ship: choose only one version option" >&2
+        exit 2
+    fi
+
+    if [[ $# -ne 1 || -z "$1" ]]; then
+        echo "ship: --version requires a value (e.g. --version v1.2.3)" >&2
+        exit 2
+    fi
+
+    VERSION_TAG="$1"
+    VERSION_SET=true
 }
 
 run() {
@@ -110,6 +128,17 @@ while [[ $# -gt 0 ]]; do
         --bump-major)
             set_bump major
             ;;
+        --version)
+            shift
+            if [[ $# -eq 0 || "${1:-}" == --* ]]; then
+                echo "ship: --version requires a value (e.g. --version v1.2.3)" >&2
+                exit 2
+            fi
+            set_version "${1:-}"
+            ;;
+        --version=*)
+            set_version "${1#*=}"
+            ;;
         --dry-run)
             DRY_RUN=true
             ;;
@@ -129,12 +158,16 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if ! "$BUMP_SET"; then
-    die "choose a version bump: --bump-patch, --bump-minor, or --bump-major"
+if ! "$VERSION_SET"; then
+    die "choose a version option: --version vX.Y.Z, --bump-patch, --bump-minor, or --bump-major"
 fi
 
-VERSION_TAG="$(next_version "$BUMP")"
-echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
+if [[ -n "$BUMP" ]]; then
+    VERSION_TAG="$(next_version "$BUMP")"
+    echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
+else
+    echo "Using explicit version: $VERSION_TAG"
+fi
 
 if [[ ! "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     die "version tag '$VERSION_TAG' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
