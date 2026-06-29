@@ -193,7 +193,7 @@ if git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/$VERSION_TAG" | grep -
 fi
 
 # Build and bump the Lovelace card before the integration manifest is bumped.
-run "$REPO_ROOT/scripts/deploy-card"
+# run "$REPO_ROOT/scripts/deploy-card"
 
 update_manifest
 
