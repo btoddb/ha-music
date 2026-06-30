@@ -293,6 +293,7 @@ class MusicController:
                         "uris": candidate.uri,
                     },
                     blocking=True,
+                    return_response=True,
                 )
             except HomeAssistantError as err:
                 # The track is already saved to Liked Songs at this point, so a
