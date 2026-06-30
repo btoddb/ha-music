@@ -24,6 +24,10 @@ playable through MA.
    `spotify://playlist/<id>` URI, or an `open.spotify.com/playlist/<id>` URL,
    so the user can paste whatever form they have on hand. The value is
    normalized to the bare id before being sent to SpotifyPlus.
+4. **LK-11 (constraint):** If `playlist_items_add` fails (bad id, transient
+   API error, etc.), the failure is logged and swallowed rather than raised.
+   The track is already saved to Liked Songs by that point, so the like flow
+   still completes instead of leaving the candidate list "stuck".
 
 ## Out of scope
 
@@ -40,3 +44,5 @@ playable through MA.
 - [x] `confirm_like` with nothing configured calls only
       `save_track_favorites`.
 - [x] The playlist id is normalized from bare id / URI / URL forms.
+- [x] A `playlist_items_add` failure is logged, not raised, and
+      `confirm_like` still clears the like candidates.

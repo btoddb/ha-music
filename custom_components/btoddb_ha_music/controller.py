@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -39,6 +40,8 @@ from .const import (
     SPOTIFYPLUS_DOMAIN,
 )
 from .models import LikeCandidate, NamedMapping, NowPlaying, parse_named_mapping
+
+_LOGGER = logging.getLogger(__name__)
 
 SelectionListener = Callable[[], None]
 
@@ -280,16 +283,27 @@ class MusicController:
             blocking=True,
         )
         if self.like_playlist_id is not None:
-            await self.hass.services.async_call(
-                SPOTIFYPLUS_DOMAIN,
-                SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS,
-                {
-                    "entity_id": self.spotify_entity_id,
-                    "playlist_id": self.like_playlist_id,
-                    "uris": candidate.uri,
-                },
-                blocking=True,
-            )
+            try:
+                await self.hass.services.async_call(
+                    SPOTIFYPLUS_DOMAIN,
+                    SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS,
+                    {
+                        "entity_id": self.spotify_entity_id,
+                        "playlist_id": self.like_playlist_id,
+                        "uris": candidate.uri,
+                    },
+                    blocking=True,
+                )
+            except HomeAssistantError as err:
+                # The track is already saved to Liked Songs at this point, so a
+                # playlist-add failure (bad id, transient API error, etc.)
+                # shouldn't leave the like flow stuck "unfinished".
+                _LOGGER.warning(
+                    "Saved %s to Liked Songs but failed to add it to playlist %s: %s",
+                    candidate.label,
+                    self.like_playlist_id,
+                    err,
+                )
         self._clear_like_candidates()
 
     async def async_cancel_like(self) -> None:
@@ -435,7 +449,7 @@ def _normalize_playlist_id(raw: Any) -> str | None:
         if "open.spotify.com/playlist/" in value:
             value = value.split("open.spotify.com/playlist/", 1)[1]
 
-    value = value.split("?", 1)[0].strip("/")
+    value = value.split("?", 1)[0].strip("/").split("/", 1)[0]
     return value or None
 
 

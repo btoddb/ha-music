@@ -408,6 +408,54 @@ def test_confirm_like_also_adds_to_configured_playlist() -> None:
     assert any(call[1] == "save_track_favorites" for call in hass.services.calls)
 
 
+def test_confirm_like_logs_and_completes_when_playlist_add_fails() -> None:
+    """A playlist-add failure is swallowed so the Liked Songs save still sticks."""
+
+    class _FailingPlaylistAddServices(_FakeServices):
+        async def async_call(
+            self,
+            domain: str,
+            service: str,
+            data: dict,
+            blocking: bool = True,
+            return_response: bool = False,
+        ):
+            if service == "playlist_items_add":
+                self.calls.append((domain, service, data, blocking, return_response))
+                raise HomeAssistantError("boom")
+            return await super().async_call(
+                domain,
+                service,
+                data,
+                blocking=blocking,
+                return_response=return_response,
+            )
+
+    hass = _FakeHass(
+        states={
+            "media_player.office": _FakeState(
+                {ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"}
+            )
+        },
+        response=_SEARCH_RESPONSE,
+    )
+    hass.services = _FailingPlaylistAddServices(_SEARCH_RESPONSE)
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+        like_playlist_id="spotify:playlist:abc123",
+    )
+    asyncio.run(controller.async_find_like_matches())
+
+    asyncio.run(controller.async_confirm_like())
+
+    assert controller.like_candidates == []
+    assert controller.selected_like_candidate is None
+    assert any(call[1] == "save_track_favorites" for call in hass.services.calls)
+    assert any(call[1] == "playlist_items_add" for call in hass.services.calls)
+
+
 def test_confirm_like_requires_a_selected_candidate() -> None:
     """Confirming with nothing selected refuses rather than guessing."""
 
@@ -497,6 +545,7 @@ def test_parse_search_response_skips_items_missing_identifiers() -> None:
         ("spotify://playlist/abc123", "abc123"),
         ("https://open.spotify.com/playlist/abc123", "abc123"),
         ("https://open.spotify.com/playlist/abc123?si=xyz", "abc123"),
+        ("https://open.spotify.com/playlist/abc123/comments", "abc123"),
         ("  abc123  ", "abc123"),
         ("", None),
         (None, None),
