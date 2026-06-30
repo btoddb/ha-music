@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.btoddb_ha_music.controller import (
     MusicController,
+    _normalize_playlist_id,
     _parse_search_response,
 )
 
@@ -82,6 +83,7 @@ def _like_controller(
     *,
     speakers: dict,
     spotify_entity: str | None = None,
+    like_playlist_id: str | None = None,
 ) -> MusicController:
     """Build a controller wired to a fake hass for like-flow tests."""
 
@@ -93,6 +95,7 @@ def _like_controller(
             "radio_stations": {},
             "playlists": {},
             "spotify_entity": spotify_entity or "",
+            "like_playlist_id": like_playlist_id or "",
         },
         options={},
     )
@@ -369,6 +372,40 @@ def test_confirm_like_saves_and_clears() -> None:
     domain, service, data, _blocking, _return_response = hass.services.calls[-1]
     assert (domain, service) == ("spotifyplus", "save_track_favorites")
     assert data == {"entity_id": "media_player.spotifyplus", "ids": "1"}
+    assert all(call[1] != "playlist_items_add" for call in hass.services.calls)
+
+
+def test_confirm_like_also_adds_to_configured_playlist() -> None:
+    """Confirming with a playlist configured saves and appends to it."""
+
+    hass = _FakeHass(
+        states={
+            "media_player.office": _FakeState(
+                {ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"}
+            )
+        },
+        response=_SEARCH_RESPONSE,
+    )
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+        like_playlist_id="spotify:playlist:abc123",
+    )
+    asyncio.run(controller.async_find_like_matches())
+
+    asyncio.run(controller.async_confirm_like())
+
+    assert controller.like_candidates == []
+    assert controller.selected_like_candidate is None
+    domain, service, data, _blocking, _return_response = hass.services.calls[-1]
+    assert (domain, service) == ("spotifyplus", "playlist_items_add")
+    assert data == {
+        "entity_id": "media_player.spotifyplus",
+        "playlist_id": "abc123",
+        "uris": "spotify:track:1",
+    }
+    assert any(call[1] == "save_track_favorites" for call in hass.services.calls)
 
 
 def test_confirm_like_requires_a_selected_candidate() -> None:
@@ -450,3 +487,22 @@ def test_parse_search_response_skips_items_missing_identifiers() -> None:
     candidates = _parse_search_response(response)
 
     assert [c.track_id for c in candidates] == ["3"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("abc123", "abc123"),
+        ("spotify:playlist:abc123", "abc123"),
+        ("spotify://playlist/abc123", "abc123"),
+        ("https://open.spotify.com/playlist/abc123", "abc123"),
+        ("https://open.spotify.com/playlist/abc123?si=xyz", "abc123"),
+        ("  abc123  ", "abc123"),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_normalize_playlist_id_accepts_known_forms(raw, expected) -> None:
+    """The playlist id is extracted from any pasted form."""
+
+    assert _normalize_playlist_id(raw) == expected

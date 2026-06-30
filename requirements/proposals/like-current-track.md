@@ -39,8 +39,8 @@ the user pick the right match before saving anything.
 
 ## Out of scope
 
-- Adding the track to a named playlist (e.g. "BToddB All") — deferred; only
-  Liked Songs is in scope for this iteration.
+- Adding the track to a named playlist — see
+  [`like-add-to-playlist.md`](like-add-to-playlist.md).
 - Auto-liking a track without the search-and-pick step.
 - Validating the installed SpotifyPlus version's exact service field names
   beyond what this proposal assumes (`search_tracks` fields `entity_id`,

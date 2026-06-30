@@ -23,6 +23,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CONF_LIKE_PLAYLIST_ID,
     CONF_LIKE_SEARCH_LIMIT,
     CONF_PLAYLISTS,
     CONF_RADIO_STATIONS,
@@ -32,6 +33,7 @@ from .const import (
     MA_ENQUEUE_REPLACE,
     MUSIC_ASSISTANT_DOMAIN,
     SERVICE_MA_PLAY_MEDIA,
+    SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS,
     SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES,
     SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
     SPOTIFYPLUS_DOMAIN,
@@ -66,6 +68,7 @@ class MusicController:
         self.like_search_limit = int(
             data.get(CONF_LIKE_SEARCH_LIMIT, DEFAULT_LIKE_SEARCH_LIMIT)
         )
+        self.like_playlist_id = _normalize_playlist_id(data.get(CONF_LIKE_PLAYLIST_ID))
         self.like_candidates: list[LikeCandidate] = []
         self.selected_like_candidate: LikeCandidate | None = None
         self._listeners: list[SelectionListener] = []
@@ -276,6 +279,17 @@ class MusicController:
             },
             blocking=True,
         )
+        if self.like_playlist_id is not None:
+            await self.hass.services.async_call(
+                SPOTIFYPLUS_DOMAIN,
+                SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS,
+                {
+                    "entity_id": self.spotify_entity_id,
+                    "playlist_id": self.like_playlist_id,
+                    "uris": candidate.uri,
+                },
+                blocking=True,
+            )
         self._clear_like_candidates()
 
     async def async_cancel_like(self) -> None:
@@ -397,6 +411,32 @@ def _parse_search_response(response: Any) -> list[LikeCandidate]:
 
         candidates.append(LikeCandidate(track_id, uri, label, artist, title, album))
     return candidates
+
+
+def _normalize_playlist_id(raw: Any) -> str | None:
+    """Extract a bare Spotify playlist id from a configured value.
+
+    Accepts a bare id, a `spotify:playlist:<id>` URI, a Music-Assistant-style
+    `spotify://playlist/<id>` URI, or an `open.spotify.com/playlist/<id>` URL,
+    so users can paste whatever form they have on hand.
+    """
+
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+
+    for prefix in ("spotify:playlist:", "spotify://playlist/"):
+        if value.startswith(prefix):
+            value = value[len(prefix) :]
+            break
+    else:
+        if "open.spotify.com/playlist/" in value:
+            value = value.split("open.spotify.com/playlist/", 1)[1]
+
+    value = value.split("?", 1)[0].strip("/")
+    return value or None
 
 
 def _first_option(mapping: NamedMapping) -> str | None:
