@@ -398,13 +398,15 @@ def test_confirm_like_also_adds_to_configured_playlist() -> None:
 
     assert controller.like_candidates == []
     assert controller.selected_like_candidate is None
-    domain, service, data, _blocking, _return_response = hass.services.calls[-1]
+    domain, service, data, blocking, return_response = hass.services.calls[-1]
     assert (domain, service) == ("spotifyplus", "playlist_items_add")
     assert data == {
         "entity_id": "media_player.spotifyplus",
         "playlist_id": "abc123",
         "uris": "spotify:track:1",
     }
+    assert blocking is True
+    assert return_response is True
     assert any(call[1] == "save_track_favorites" for call in hass.services.calls)
 
 
