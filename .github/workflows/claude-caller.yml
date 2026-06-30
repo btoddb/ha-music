@@ -41,6 +41,7 @@ jobs:
       setup: python # or "node" / "none"
       python-version: "3.14"
       install-command: pip install -r requirements.txt
-      #plan-allowed-tools: ""
-      #implement-allowed-tools: "Bash(scripts/deploy.sh:*),Bash(npm *)"
-      #review-allowed-tools: ""
+      plan-allowed-tools: ""
+      # implement-allowed-tools: "Read,Edit,Write,Glob,Grep,Bash(python3 -m pytest*),Bash(scripts/lint),Bash(scripts/lint *),Bash(gh pr create *)"
+      implement-allowed-tools: "Bash(scripts/deploy.sh),Bash(npm *)"
+      # review-allowed-tools: "Read,Glob,Grep,Bash(python3 -m pytest*),Bash(scripts/lint),Bash(scripts/lint *)"
