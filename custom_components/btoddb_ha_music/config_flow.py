@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_LIKE_PLAYLIST_ID,
     CONF_LIKE_SEARCH_LIMIT,
     CONF_PLAYLISTS,
     CONF_RADIO_STATIONS,
@@ -134,6 +135,17 @@ def _schema(values: dict[str, Any] | None = None) -> vol.Schema:
         )
     )
 
+    like_playlist_selector = selector.TextSelector(
+        selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+    )
+    current_like_playlist_id = values.get(CONF_LIKE_PLAYLIST_ID)
+    if current_like_playlist_id:
+        schema[
+            vol.Optional(CONF_LIKE_PLAYLIST_ID, default=current_like_playlist_id)
+        ] = like_playlist_selector
+    else:
+        schema[vol.Optional(CONF_LIKE_PLAYLIST_ID)] = like_playlist_selector
+
     return vol.Schema(schema)
 
 
@@ -168,4 +180,7 @@ def _parse_form(user_input: dict[str, Any], errors: dict[str, str]) -> dict[str,
     parsed[CONF_LIKE_SEARCH_LIMIT] = int(
         user_input.get(CONF_LIKE_SEARCH_LIMIT, DEFAULT_LIKE_SEARCH_LIMIT)
     )
+    like_playlist_id = user_input.get(CONF_LIKE_PLAYLIST_ID)
+    if like_playlist_id:
+        parsed[CONF_LIKE_PLAYLIST_ID] = like_playlist_id
     return parsed

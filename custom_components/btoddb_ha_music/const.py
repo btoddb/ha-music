@@ -12,6 +12,7 @@ CONF_RADIO_STATIONS = "radio_stations"
 CONF_SPEAKERS = "speakers"
 CONF_SPOTIFY_ENTITY = "spotify_entity"
 CONF_LIKE_SEARCH_LIMIT = "like_search_limit"
+CONF_LIKE_PLAYLIST_ID = "like_playlist_id"
 
 DEFAULT_LIKE_SEARCH_LIMIT = 5
 
@@ -41,3 +42,4 @@ MA_ENQUEUE_REPLACE = "replace"
 SPOTIFYPLUS_DOMAIN = "spotifyplus"
 SERVICE_SPOTIFYPLUS_SEARCH_TRACKS = "search_tracks"
 SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES = "save_track_favorites"
+SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS = "playlist_items_add"

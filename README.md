@@ -29,6 +29,11 @@ groups map names to one `media_player` entity id or a list of `media_player`
 entity ids. Radio stations and playlists map names to the media content id that
 your media player or Music Assistant instance can play.
 
+Optionally configure a SpotifyPlus media player entity to enable "like", and a
+Spotify playlist (id, URI, or `open.spotify.com` URL) to also append liked
+tracks to — Music Assistant can't play Spotify's Liked Songs directly, so this
+lets MA play them via a regular playlist.
+
 ## How it behaves (spec)
 
 The full, ID'd behavior spec lives in [`requirements/spec/.`](requirements/spec/.).

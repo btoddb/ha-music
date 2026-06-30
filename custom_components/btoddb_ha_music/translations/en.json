@@ -9,7 +9,8 @@
           "radio_stations": "Radio stations",
           "playlists": "Playlists",
           "spotify_entity": "SpotifyPlus media player (optional, enables \"like\")",
-          "like_search_limit": "Like search result limit"
+          "like_search_limit": "Like search result limit",
+          "like_playlist_id": "Spotify playlist for liked songs (optional, so Music Assistant can play them)"
         }
       }
     },
@@ -30,7 +31,8 @@
           "radio_stations": "Radio stations",
           "playlists": "Playlists",
           "spotify_entity": "SpotifyPlus media player (optional, enables \"like\")",
-          "like_search_limit": "Like search result limit"
+          "like_search_limit": "Like search result limit",
+          "like_playlist_id": "Spotify playlist for liked songs (optional, so Music Assistant can play them)"
         }
       }
     },
