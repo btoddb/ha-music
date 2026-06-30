@@ -356,12 +356,18 @@ def _parse_search_response(response: Any) -> list[LikeCandidate]:
 
     items: list[Any] = []
     if isinstance(response, dict):
-        tracks = response.get("tracks")
-        if not isinstance(tracks, dict):
-            result = response.get("result")
-            tracks = result.get("tracks") if isinstance(result, dict) else None
-        if isinstance(tracks, dict):
-            items = tracks.get("items") or []
+        result = response.get("result")
+        track_pages = (
+            response.get("tracks"),
+            result.get("tracks") if isinstance(result, dict) else None,
+            result,
+        )
+        for track_page in track_pages:
+            if isinstance(track_page, dict) and isinstance(
+                track_page.get("items"), list
+            ):
+                items = track_page["items"]
+                break
 
     candidates: list[LikeCandidate] = []
     label_counts: dict[str, int] = {}

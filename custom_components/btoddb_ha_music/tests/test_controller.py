@@ -419,6 +419,16 @@ def test_parse_search_response_handles_nested_result_shape() -> None:
     assert [c.track_id for c in candidates] == ["1", "2"]
 
 
+def test_parse_search_response_handles_real_spotifyplus_shape() -> None:
+    """The actual SpotifyPlus shape nests items directly under 'result'."""
+
+    response = {"result": _SEARCH_RESPONSE["tracks"]}
+
+    candidates = _parse_search_response(response)
+
+    assert [c.track_id for c in candidates] == ["1", "2"]
+
+
 def test_parse_search_response_skips_items_missing_identifiers() -> None:
     """Items without an id or uri can't be liked, so they're dropped."""
 
