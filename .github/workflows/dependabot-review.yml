@@ -1,0 +1,26 @@
+name: Dependabot Claude Review
+
+# Dependabot has no built-in way to post a follow-up comment or template the
+# PR description, so we post the "@claude review" trigger ourselves. This
+# comment is then picked up by claude.yml's issue_comment listener, which
+# routes it through the same review job a human typing it would trigger.
+#
+# This MUST use a PAT, not github.token: GitHub blocks the default
+# GITHUB_TOKEN from triggering other workflows (anti-recursion safeguard), so
+# a comment posted with it would never reach claude.yml's issue_comment
+# listener. DEPENDABOT_REVIEW_PAT needs at least "pull requests: write" repo
+# permission (fine-grained PAT) or the "repo" scope (classic PAT).
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  trigger-review:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment "@claude review"
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_REVIEW_PAT }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "@claude review"
