@@ -26,6 +26,18 @@ class NowPlaying:
     album: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class LikeCandidate:
+    """A Spotify search result eligible to be saved to Liked Songs."""
+
+    track_id: str
+    uri: str
+    label: str
+    artist: str
+    title: str
+    album: str | None
+
+
 def parse_named_mapping(raw: Any, *, allow_list_values: bool) -> NamedMapping:
     """Parse a JSON object into a name-to-value mapping."""
 

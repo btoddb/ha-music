@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.core import callback
 
 from . import MusicConfigEntry
 from .controller import MusicController, MusicEntity
@@ -37,6 +38,30 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
                 controller.async_stop_music,
                 lambda: bool(controller.speakers),
             ),
+            MusicActionButton(
+                controller,
+                "find_like_matches",
+                "find_like_matches",
+                controller.async_find_like_matches,
+                lambda: controller.like_enabled,
+            ),
+            MusicActionButton(
+                controller,
+                "confirm_like",
+                "confirm_like",
+                controller.async_confirm_like,
+                lambda: (
+                    controller.like_enabled
+                    and controller.selected_like_candidate is not None
+                ),
+            ),
+            MusicActionButton(
+                controller,
+                "cancel_like",
+                "cancel_like",
+                controller.async_cancel_like,
+                lambda: controller.like_enabled and bool(controller.like_candidates),
+            ),
         ]
     )
 
@@ -64,6 +89,18 @@ class MusicActionButton(MusicEntity, ButtonEntity):
         """Return whether the button can run."""
 
         return self._is_available()
+
+    async def async_added_to_hass(self) -> None:
+        """Refresh availability when the controller's state changes."""
+
+        await super().async_added_to_hass()
+        self.async_on_remove(self._controller.async_add_listener(self._handle_update))
+
+    @callback
+    def _handle_update(self) -> None:
+        """Re-render so availability reflects the latest controller state."""
+
+        self.async_write_ha_state()
 
     async def async_press(self) -> None:
         """Run the button action."""

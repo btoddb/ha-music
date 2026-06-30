@@ -7,7 +7,9 @@
         "data": {
           "speakers": "Speaker groups",
           "radio_stations": "Radio stations",
-          "playlists": "Playlists"
+          "playlists": "Playlists",
+          "spotify_entity": "SpotifyPlus media player (optional, enables \"like\")",
+          "like_search_limit": "Like search result limit"
         }
       }
     },
@@ -26,7 +28,9 @@
         "data": {
           "speakers": "Speaker groups",
           "radio_stations": "Radio stations",
-          "playlists": "Playlists"
+          "playlists": "Playlists",
+          "spotify_entity": "SpotifyPlus media player (optional, enables \"like\")",
+          "like_search_limit": "Like search result limit"
         }
       }
     },
@@ -44,6 +48,9 @@
       },
       "playlist": {
         "name": "Playlist"
+      },
+      "like_candidate": {
+        "name": "Like candidate"
       }
     },
     "button": {
@@ -55,6 +62,15 @@
       },
       "stop_music": {
         "name": "Stop music"
+      },
+      "find_like_matches": {
+        "name": "Find like matches"
+      },
+      "confirm_like": {
+        "name": "Confirm like"
+      },
+      "cancel_like": {
+        "name": "Cancel like"
       }
     },
     "sensor": {

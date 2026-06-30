@@ -17,6 +17,9 @@ from .const import (
     ATTR_STATION,
     DOMAIN,
     PLATFORMS,
+    SERVICE_CANCEL_LIKE,
+    SERVICE_CONFIRM_LIKE,
+    SERVICE_FIND_LIKE_MATCHES,
     SERVICE_PLAY_RADIO_STATION,
     SERVICE_SHUFFLE_PLAY_PLAYLIST,
     SERVICE_STOP_MUSIC,
@@ -99,6 +102,18 @@ def _async_register_services(hass: HomeAssistant) -> None:
         controller = _controller_from_call(hass, call)
         await controller.async_stop_music(speakers=call.data.get(ATTR_SPEAKERS))
 
+    async def find_like_matches(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_find_like_matches()
+
+    async def confirm_like(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_confirm_like()
+
+    async def cancel_like(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_cancel_like()
+
     speaker_value = vol.Any(cv.string, vol.All(cv.ensure_list, [cv.string]))
     hass.services.async_register(
         DOMAIN,
@@ -135,6 +150,24 @@ def _async_register_services(hass: HomeAssistant) -> None:
             }
         ),
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_FIND_LIKE_MATCHES,
+        find_like_matches,
+        schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONFIRM_LIKE,
+        confirm_like,
+        schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CANCEL_LIKE,
+        cancel_like,
+        schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
+    )
     data.services_registered = True
 
 
@@ -146,6 +179,9 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_PLAY_RADIO_STATION,
         SERVICE_SHUFFLE_PLAY_PLAYLIST,
         SERVICE_STOP_MUSIC,
+        SERVICE_FIND_LIKE_MATCHES,
+        SERVICE_CONFIRM_LIKE,
+        SERVICE_CANCEL_LIKE,
     ):
         hass.services.async_remove(DOMAIN, service)
     data.services_registered = False

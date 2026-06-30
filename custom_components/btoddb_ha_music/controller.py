@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import Any
 
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_ALBUM_NAME,
@@ -22,14 +23,20 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CONF_LIKE_SEARCH_LIMIT,
     CONF_PLAYLISTS,
     CONF_RADIO_STATIONS,
     CONF_SPEAKERS,
+    CONF_SPOTIFY_ENTITY,
+    DEFAULT_LIKE_SEARCH_LIMIT,
     MA_ENQUEUE_REPLACE,
     MUSIC_ASSISTANT_DOMAIN,
     SERVICE_MA_PLAY_MEDIA,
+    SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES,
+    SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
+    SPOTIFYPLUS_DOMAIN,
 )
-from .models import NamedMapping, NowPlaying, parse_named_mapping
+from .models import LikeCandidate, NamedMapping, NowPlaying, parse_named_mapping
 
 SelectionListener = Callable[[], None]
 
@@ -55,7 +62,19 @@ class MusicController:
         self.selected_speakers = _first_option(self.speakers)
         self.selected_radio_station = _first_option(self.radio_stations)
         self.selected_playlist = _first_option(self.playlists)
+        self.spotify_entity_id = data.get(CONF_SPOTIFY_ENTITY) or None
+        self.like_search_limit = int(
+            data.get(CONF_LIKE_SEARCH_LIMIT, DEFAULT_LIKE_SEARCH_LIMIT)
+        )
+        self.like_candidates: list[LikeCandidate] = []
+        self.selected_like_candidate: LikeCandidate | None = None
         self._listeners: list[SelectionListener] = []
+
+    @property
+    def like_enabled(self) -> bool:
+        """Return whether a SpotifyPlus entity is configured for liking tracks."""
+
+        return self.spotify_entity_id is not None
 
     @property
     def all_media_player_entity_ids(self) -> set[str]:
@@ -197,6 +216,81 @@ class MusicController:
 
         return NowPlaying("unknown", None, "unknown", "unknown", None)
 
+    async def async_find_like_matches(self) -> None:
+        """Search Spotify for tracks matching the now-playing artist/title."""
+
+        if self.spotify_entity_id is None:
+            raise HomeAssistantError("No SpotifyPlus entity is configured")
+
+        now_playing = self.now_playing()
+        if now_playing.artist == "unknown" or now_playing.title == "unknown":
+            raise HomeAssistantError("Nothing identifiable is currently playing")
+
+        query = f"{now_playing.artist} {now_playing.title}"
+        response = await self.hass.services.async_call(
+            SPOTIFYPLUS_DOMAIN,
+            SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
+            {
+                "entity_id": self.spotify_entity_id,
+                "criteria": query,
+                "limit": self.like_search_limit,
+            },
+            blocking=True,
+            return_response=True,
+        )
+
+        candidates = _parse_search_response(response)
+        if not candidates:
+            raise HomeAssistantError(f"No Spotify matches found for {query}")
+
+        self.like_candidates = candidates
+        self.selected_like_candidate = candidates[0]
+        self._notify_listeners()
+
+    @callback
+    def set_selected_like_candidate(self, label: str) -> None:
+        """Select a like candidate by its label."""
+
+        for candidate in self.like_candidates:
+            if candidate.label == label:
+                self.selected_like_candidate = candidate
+                self._notify_listeners()
+                return
+        raise ValueError(f"Unknown like candidate: {label}")
+
+    async def async_confirm_like(self) -> None:
+        """Save the selected like candidate to Spotify Liked Songs."""
+
+        if self.spotify_entity_id is None:
+            raise HomeAssistantError("No SpotifyPlus entity is configured")
+        candidate = self.selected_like_candidate
+        if candidate is None:
+            raise HomeAssistantError("No like candidate is selected")
+
+        await self.hass.services.async_call(
+            SPOTIFYPLUS_DOMAIN,
+            SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES,
+            {
+                "entity_id": self.spotify_entity_id,
+                "ids": candidate.track_id,
+            },
+            blocking=True,
+        )
+        self._clear_like_candidates()
+
+    async def async_cancel_like(self) -> None:
+        """Discard pending like candidates without saving anything."""
+
+        self._clear_like_candidates()
+
+    @callback
+    def _clear_like_candidates(self) -> None:
+        """Reset the like candidate list and notify listeners."""
+
+        self.like_candidates = []
+        self.selected_like_candidate = None
+        self._notify_listeners()
+
     def _resolve_speakers(self, speakers: str | list[str] | None) -> list[str]:
         """Resolve a speaker option or entity id list into media players."""
 
@@ -247,8 +341,56 @@ class MusicController:
             self.selected_radio_station = option
         elif label == "playlist":
             self.selected_playlist = option
+        self._notify_listeners()
+
+    @callback
+    def _notify_listeners(self) -> None:
+        """Notify listeners of a state change."""
+
         for listener in self._listeners:
             listener()
+
+
+def _parse_search_response(response: Any) -> list[LikeCandidate]:
+    """Build like candidates from a SpotifyPlus search_tracks response."""
+
+    items: list[Any] = []
+    if isinstance(response, dict):
+        tracks = response.get("tracks")
+        if not isinstance(tracks, dict):
+            result = response.get("result")
+            tracks = result.get("tracks") if isinstance(result, dict) else None
+        if isinstance(tracks, dict):
+            items = tracks.get("items") or []
+
+    candidates: list[LikeCandidate] = []
+    label_counts: dict[str, int] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        track_id = item.get("id")
+        uri = item.get("uri")
+        if not track_id or not uri:
+            continue
+
+        title = item.get("name") or "unknown"
+        artists = item.get("artists") or []
+        artist = (
+            ", ".join(
+                a["name"] for a in artists if isinstance(a, dict) and a.get("name")
+            )
+            or "unknown"
+        )
+        album_obj = item.get("album")
+        album = album_obj.get("name") if isinstance(album_obj, dict) else None
+
+        base_label = f"{artist} - {title}" + (f" ({album})" if album else "")
+        count = label_counts.get(base_label, 0)
+        label_counts[base_label] = count + 1
+        label = base_label if count == 0 else f"{base_label} [{count + 1}]"
+
+        candidates.append(LikeCandidate(track_id, uri, label, artist, title, album))
+    return candidates
 
 
 def _first_option(mapping: NamedMapping) -> str | None:

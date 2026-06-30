@@ -39,3 +39,24 @@ stop_music:
       example: "Whole House"
       selector:
         object:
+find_like_matches:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+confirm_like:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+cancel_like:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
