@@ -29,10 +29,6 @@ interface LikeCandidate {
   album: string | null;
 }
 
-interface MwcButton extends HTMLElement {
-  disabled: boolean;
-}
-
 class BtoddbHaMusicLikeCard extends HTMLElement {
   private _config: CardConfig = {};
   private _hass: Hass | null = null;
@@ -137,11 +133,10 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     return row;
   }
 
-  private _makeButton(className: string, label: string): HTMLElement {
-    const btn = document.createElement("mwc-button");
-    btn.className = className;
-    btn.setAttribute("raised", "");
-    btn.setAttribute("label", label);
+  private _makeButton(className: string, label: string): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = `ha-btn ${className}`;
+    btn.textContent = label;
     return btn;
   }
 
@@ -221,8 +216,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     }
 
     // Button availability
-    const likeBtn = this.shadowRoot.querySelector<MwcButton>(".like-btn");
-    const cancelBtn = this.shadowRoot.querySelector<MwcButton>(".cancel-btn");
+    const likeBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".like-btn");
+    const cancelBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".cancel-btn");
 
     if (likeBtn) likeBtn.disabled = confirmState?.state === "unavailable";
     if (cancelBtn) cancelBtn.disabled = cancelState?.state === "unavailable";
@@ -339,19 +334,48 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         display: flex;
         gap: 8px;
       }
+      .ha-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 16px;
+        border: none;
+        border-radius: 4px;
+        font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+        font-size: 0.875rem;
+        font-weight: 500;
+        letter-spacing: 0.08929em;
+        text-transform: uppercase;
+        cursor: pointer;
+        background-color: var(--primary-color, #03a9f4);
+        color: var(--text-primary-color, #fff);
+        box-shadow: 0 3px 1px -2px rgba(0,0,0,.2), 0 2px 2px 0 rgba(0,0,0,.14), 0 1px 5px 0 rgba(0,0,0,.12);
+        transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+        outline: none;
+      }
+      .ha-btn:hover:not(:disabled) {
+        box-shadow: 0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px 0 rgba(0,0,0,.14), 0 1px 10px 0 rgba(0,0,0,.12);
+      }
+      .ha-btn:disabled {
+        background-color: rgba(0,0,0,.12);
+        color: rgba(0,0,0,.37);
+        box-shadow: none;
+        cursor: not-allowed;
+      }
       .find-btn {
         width: 100%;
       }
-      .action-row mwc-button {
+      .action-row .ha-btn {
         flex: 1;
       }
       .like-btn {
-        --mdc-theme-primary: var(--success-color, #4caf50);
-        --mdc-theme-on-primary: #fff;
+        background-color: var(--success-color, #4caf50);
+        color: #fff;
       }
       .cancel-btn {
-        --mdc-theme-primary: var(--error-color, #f44336);
-        --mdc-theme-on-primary: #fff;
+        background-color: var(--error-color, #f44336);
+        color: #fff;
       }
     `;
   }
