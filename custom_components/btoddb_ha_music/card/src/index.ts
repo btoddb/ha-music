@@ -22,6 +22,17 @@ interface CardConfig {
   entity_prefix?: string;
 }
 
+interface LikeCandidate {
+  label: string;
+  artist: string;
+  title: string;
+  album: string | null;
+}
+
+interface MwcButton extends HTMLElement {
+  disabled: boolean;
+}
+
 class BtoddbHaMusicLikeCard extends HTMLElement {
   private _config: CardConfig = {};
   private _hass: Hass | null = null;
@@ -78,19 +89,19 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const actions = document.createElement("div");
     actions.className = "card-actions";
 
-    const findBtn = this._makeButton("find-btn", "Find Matches", "mdi:magnify");
+    const findBtn = this._makeButton("find-btn", "Find Matches");
     findBtn.addEventListener("click", () => this._callService("find_like_matches"));
 
     const actionRow = document.createElement("div");
     actionRow.className = "action-row";
 
-    const confirmBtn = this._makeButton("confirm-btn", "Confirm", "mdi:check");
-    confirmBtn.addEventListener("click", () => this._callService("confirm_like"));
+    const likeBtn = this._makeButton("like-btn", "Like");
+    likeBtn.addEventListener("click", () => this._callService("confirm_like"));
 
-    const cancelBtn = this._makeButton("cancel-btn", "Cancel", "mdi:close");
+    const cancelBtn = this._makeButton("cancel-btn", "Cancel");
     cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
 
-    actionRow.append(confirmBtn, cancelBtn);
+    actionRow.append(likeBtn, cancelBtn);
     actions.append(findBtn, actionRow);
 
     card.append(content, actions);
@@ -116,28 +127,21 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _makeCandidateRow(): HTMLElement {
     const row = document.createElement("div");
     row.className = "candidate-row hidden";
-    const label = document.createElement("label");
-    label.className = "label";
+    const label = document.createElement("div");
+    label.className = "label candidate-label";
     label.textContent = "Match";
-    const select = document.createElement("select");
-    select.className = "candidate-select";
-    select.addEventListener("change", (e) => this._onSelectChange(e));
-    row.append(label, select);
+    const list = document.createElement("ul");
+    list.className = "candidate-list";
+    list.setAttribute("role", "listbox");
+    row.append(label, list);
     return row;
   }
 
-  private _makeButton(className: string, label: string, icon: string): HTMLElement {
-    const btn = document.createElement("button");
-    btn.className = `action-btn ${className}`;
-    btn.setAttribute("aria-label", label);
-
-    const iconEl = document.createElement("ha-icon");
-    iconEl.setAttribute("icon", icon);
-
-    const labelEl = document.createElement("span");
-    labelEl.textContent = label;
-
-    btn.append(iconEl, labelEl);
+  private _makeButton(className: string, label: string): HTMLElement {
+    const btn = document.createElement("mwc-button");
+    btn.className = className;
+    btn.setAttribute("raised", "");
+    btn.setAttribute("label", label);
     return btn;
   }
 
@@ -158,48 +162,77 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     if (titleEl)
       titleEl.textContent = String(nowPlaying?.attributes?.title ?? "—");
 
-    // Candidate select
+    // Candidate listbox
     const candidateRow = this.shadowRoot.querySelector<HTMLElement>(".candidate-row");
-    const selectEl = this.shadowRoot.querySelector<HTMLSelectElement>(".candidate-select");
-    const options = (likeCandidate?.attributes?.options as string[] | undefined) ?? [];
+    const candidateList = this.shadowRoot.querySelector<HTMLUListElement>(".candidate-list");
     const currentOption = likeCandidate?.state;
-    const hasCandidates = options.length > 0;
 
+    const structuredCandidates =
+      (likeCandidate?.attributes?.candidates as LikeCandidate[] | undefined) ?? [];
+    const fallbackOptions =
+      (likeCandidate?.attributes?.options as string[] | undefined) ?? [];
+
+    const candidates: LikeCandidate[] =
+      structuredCandidates.length > 0
+        ? structuredCandidates
+        : fallbackOptions.map((opt) => ({ label: opt, artist: opt, title: "", album: null }));
+
+    const hasCandidates = candidates.length > 0;
     if (candidateRow) candidateRow.classList.toggle("hidden", !hasCandidates);
 
-    if (selectEl && hasCandidates) {
-      const existing = Array.from(selectEl.options).map((o) => o.value);
-      if (existing.join(",") !== options.join(",")) {
-        selectEl.innerHTML = "";
-        for (const opt of options) {
-          const el = document.createElement("option");
-          el.value = opt;
-          el.textContent = opt;
-          selectEl.append(el);
+    if (candidateList && hasCandidates) {
+      const existingLabels = Array.from(
+        candidateList.querySelectorAll<HTMLLIElement>(".candidate-option")
+      ).map((li) => li.dataset.value ?? "");
+      const newLabels = candidates.map((c) => c.label);
+
+      if (existingLabels.join("\0") !== newLabels.join("\0")) {
+        candidateList.innerHTML = "";
+        for (const candidate of candidates) {
+          const li = document.createElement("li");
+          li.className = "candidate-option";
+          li.setAttribute("role", "option");
+          li.dataset.value = candidate.label;
+
+          const artistSpan = document.createElement("span");
+          artistSpan.className = "candidate-artist";
+          artistSpan.textContent = candidate.artist;
+
+          const songSpan = document.createElement("span");
+          songSpan.className = "candidate-song";
+          songSpan.textContent = candidate.title;
+
+          const albumSpan = document.createElement("span");
+          albumSpan.className = "candidate-album";
+          albumSpan.textContent = candidate.album ?? "";
+          if (!candidate.album) albumSpan.hidden = true;
+
+          li.append(artistSpan, songSpan, albumSpan);
+          li.addEventListener("click", () => this._onCandidateSelect(candidate.label));
+          candidateList.append(li);
         }
       }
-      if (currentOption && selectEl.value !== currentOption) {
-        selectEl.value = currentOption;
-      }
+
+      candidateList.querySelectorAll<HTMLLIElement>(".candidate-option").forEach((li) => {
+        const selected = li.dataset.value === currentOption;
+        li.classList.toggle("selected", selected);
+        li.setAttribute("aria-selected", String(selected));
+      });
     }
 
     // Button availability
-    const confirmBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".confirm-btn");
-    const cancelBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".cancel-btn");
+    const likeBtn = this.shadowRoot.querySelector<MwcButton>(".like-btn");
+    const cancelBtn = this.shadowRoot.querySelector<MwcButton>(".cancel-btn");
 
-    if (confirmBtn)
-      confirmBtn.disabled = confirmState?.state === "unavailable";
-    if (cancelBtn)
-      cancelBtn.disabled = cancelState?.state === "unavailable";
+    if (likeBtn) likeBtn.disabled = confirmState?.state === "unavailable";
+    if (cancelBtn) cancelBtn.disabled = cancelState?.state === "unavailable";
   }
 
-  private _onSelectChange(e: Event): void {
-    const select = e.target as HTMLSelectElement;
-    const option = select.value;
-    if (!option || !this._hass) return;
+  private _onCandidateSelect(label: string): void {
+    if (!this._hass) return;
     this._hass.callService("select", "select_option", {
       entity_id: `select.${this._prefix}_like_candidate`,
-      option,
+      option: label,
     });
   }
 
@@ -246,22 +279,55 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       .candidate-row {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 6px;
         margin-top: 12px;
         width: 100%;
       }
       .candidate-row.hidden {
         display: none;
       }
-      .candidate-select {
-        width: 100%;
-        padding: 8px 10px;
-        border-radius: 6px;
+      .candidate-label {
+        min-width: unset;
+      }
+      .candidate-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
         border: 1px solid var(--divider-color, #e0e0e0);
-        background: var(--card-background-color, #fff);
-        color: var(--primary-text-color);
-        font-size: 0.9em;
+        border-radius: 6px;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .candidate-option {
+        display: flex;
+        flex-direction: column;
+        padding: 8px 12px;
         cursor: pointer;
+        border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        transition: background 0.1s;
+      }
+      .candidate-option:last-child {
+        border-bottom: none;
+      }
+      .candidate-option:hover {
+        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+      }
+      .candidate-option.selected {
+        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.12);
+      }
+      .candidate-artist {
+        font-size: 0.9em;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+      .candidate-song {
+        font-size: 0.85em;
+        color: var(--primary-text-color);
+      }
+      .candidate-album {
+        font-size: 0.8em;
+        color: var(--secondary-text-color);
+        font-style: italic;
       }
       .card-actions {
         padding: 8px 16px 16px;
@@ -273,44 +339,19 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         display: flex;
         gap: 8px;
       }
-      .action-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 6px 14px;
-        border: none;
-        border-radius: 6px;
-        background: var(--primary-color, #03a9f4);
-        color: var(--text-primary-color, #fff);
-        font-size: 0.875em;
-        font-weight: 500;
-        cursor: pointer;
-        transition: filter 0.15s;
-      }
-      .action-btn:hover:not(:disabled) {
-        filter: brightness(1.1);
-      }
-      .action-btn:disabled {
-        opacity: 0.4;
-        cursor: default;
-      }
       .find-btn {
         width: 100%;
       }
-      .action-row .action-btn {
+      .action-row mwc-button {
         flex: 1;
       }
-      .confirm-btn {
-        background: var(--success-color, #4caf50);
-        color: #fff;
+      .like-btn {
+        --mdc-theme-primary: var(--success-color, #4caf50);
+        --mdc-theme-on-primary: #fff;
       }
       .cancel-btn {
-        background: var(--error-color, #f44336);
-        color: #fff;
-      }
-      ha-icon {
-        --mdc-icon-size: 18px;
+        --mdc-theme-primary: var(--error-color, #f44336);
+        --mdc-theme-on-primary: #fff;
       }
     `;
   }

@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ATTR_PLAYLIST,
@@ -45,7 +46,7 @@ class MusicData:
     services_registered: bool = False
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the Lovelace card as a frontend resource when the bundle exists."""
     if _CARD_PATH.exists():
         await hass.http.async_register_static_paths(
