@@ -1,6 +1,6 @@
 {
   "name": "btoddb-ha-music-card",
-  "version": "0.0.1",
+  "version": "0.0.6",
   "private": true,
   "scripts": {
     "build": "rollup -c rollup.config.mjs"

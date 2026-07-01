@@ -37,6 +37,8 @@ ATTR_CONFIG_ENTRY = "config_entry"
 _CARD_URL = f"/{DOMAIN}/{DOMAIN}.js"
 _CARD_PATH = Path(__file__).parent / "www" / f"{DOMAIN}.js"
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 
 @dataclass(slots=True)
 class MusicData:
