@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build the BToddB HA Music Lovelace card and deploy it into the
+# Build the Lovelace card(s) and deploy them into the
 # integration's www/ directory.
 #
-# The integration serves the card at /btoddb_ha_music/ and auto-registers
+# The integration serves the and auto-registers
 # it as a frontend module (add_extra_js_url) with no-cache headers, so after this
 # runs you only need to HARD-REFRESH the browser — there is no Lovelace resource
 # to add and no Home Assistant restart required.
@@ -13,9 +13,11 @@ SCRIPTS_DIR=$(cd $(dirname $0); pwd)
 HOME_DIR=$(dirname ${SCRIPTS_DIR})
 echo "home dir = ${HOME_DIR}"
 
+INTEGRATION_DIR=btoddb_ha_music
+
 set -euo pipefail
 
-CARD_DIR="${HOME_DIR}/custom_components/btoddb_ha_music/card"
+CARD_DIR="${HOME_DIR}/custom_components/${INTEGRATION_DIR}/card"
 COMPONENT_WWW="$(cd "$CARD_DIR/.." && pwd)/www"
 cd "$CARD_DIR"
 
@@ -54,7 +56,7 @@ data = json.load(open("package.json"))
 data["version"] = new
 open("package.json", "w").write(json.dumps(data, indent=2) + "\n")
 src = open("src/index.ts").read()
-src = re.sub(r"v\d+\.\d+\.\d+", f"v{new}", src, count=1)
+src = re.sub(r"v\d+\.\d+\.\d+", f"v{new}", src)
 open("src/index.ts", "w").write(src)
 PYEOF
 echo "Version: $OLD_VERSION -> $NEW_VERSION"
@@ -72,7 +74,7 @@ npm run build
 # --- 4. Deploy the bundle into the component's www/ directory. ---
 echo "Deploying to $COMPONENT_WWW ..."
 mkdir -p "$COMPONENT_WWW"
-cp btoddb_ha_music.js btoddb_ha_music.js.map "$COMPONENT_WWW/"
+cp ${INTEGRATION_DIR}.js ${INTEGRATION_DIR}.js.map "$COMPONENT_WWW/"
 
 # Success: drop the rollback trap and discard the backups.
 trap - ERR

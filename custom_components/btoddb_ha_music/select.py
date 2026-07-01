@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import callback
 
@@ -133,6 +135,22 @@ class LikeCandidateSelect(MusicEntity, SelectEntity):
         """Re-render when the candidate list or selection changes."""
 
         self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose structured candidate data for the Lovelace card."""
+
+        return {
+            "candidates": [
+                {
+                    "label": c.label,
+                    "artist": c.artist,
+                    "title": c.title,
+                    "album": c.album,
+                }
+                for c in self._controller.like_candidates
+            ]
+        }
 
     async def async_select_option(self, option: str) -> None:
         """Select a candidate by its label."""

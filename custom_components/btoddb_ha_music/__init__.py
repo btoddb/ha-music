@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ATTR_PLAYLIST,
@@ -30,6 +34,11 @@ type MusicConfigEntry = ConfigEntry[MusicController]
 
 ATTR_CONFIG_ENTRY = "config_entry"
 
+_CARD_URL = f"/{DOMAIN}/{DOMAIN}.js"
+_CARD_PATH = Path(__file__).parent / "www" / f"{DOMAIN}.js"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 
 @dataclass(slots=True)
 class MusicData:
@@ -37,6 +46,16 @@ class MusicData:
 
     controllers: dict[str, MusicController] = field(default_factory=dict)
     services_registered: bool = False
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the Lovelace card as a frontend resource when the bundle exists."""
+    if _CARD_PATH.exists():
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(_CARD_URL, str(_CARD_PATH), cache_headers=False)]
+        )
+        add_extra_js_url(hass, _CARD_URL)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MusicConfigEntry) -> bool:
