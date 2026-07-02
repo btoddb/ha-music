@@ -6,13 +6,13 @@
 # script. You can also run it directly from a clean main branch.
 #
 # Usage:
-#   scripts/ship --version v1.2.3        # pre-release; set manifest version explicitly
+#   scripts/ship --set-version v1.2.3    # pre-release; set manifest version explicitly
 #   scripts/ship --bump-patch            # pre-release; increment manifest X.Y.Z to X.Y.(Z+1)
 #   scripts/ship --bump-minor            # pre-release; increment manifest X.Y.Z to X.(Y+1).0
 #   scripts/ship --bump-major            # pre-release; increment manifest X.Y.Z to (X+1).0.0
-#   scripts/ship --public-release --version v1.2.3
+#   scripts/ship --public-release --set-version v1.2.3
 #                                         # full release; label: latest, title: <tag>
-#   scripts/ship --dry-run --version v1.2.3
+#   scripts/ship --dry-run --set-version v1.2.3
 #                                         # print every command, change nothing
 #
 # Bump versions are resolved from custom_components/<repo>/manifest.json.
@@ -57,7 +57,7 @@ set_version() {
     fi
 
     if [[ $# -ne 1 || -z "$1" ]]; then
-        echo "ship: --version requires a value (e.g. --version v1.2.3)" >&2
+        echo "ship: --set-version requires a value (e.g. --set-version v1.2.3)" >&2
         exit 2
     fi
 
@@ -128,15 +128,15 @@ while [[ $# -gt 0 ]]; do
         --bump-major)
             set_bump major
             ;;
-        --version)
+        --set-version)
             shift
             if [[ $# -eq 0 || "${1:-}" == --* ]]; then
-                echo "ship: --version requires a value (e.g. --version v1.2.3)" >&2
+                echo "ship: --set-version requires a value (e.g. --set-version v1.2.3)" >&2
                 exit 2
             fi
             set_version "${1:-}"
             ;;
-        --version=*)
+        --set-version=*)
             set_version "${1#*=}"
             ;;
         --dry-run)
@@ -159,7 +159,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! "$VERSION_SET"; then
-    die "choose a version option: --version vX.Y.Z, --bump-patch, --bump-minor, or --bump-major"
+    die "choose a version option: --set-version vX.Y.Z, --bump-patch, --bump-minor, or --bump-major"
 fi
 
 if [[ -n "$BUMP" ]]; then
