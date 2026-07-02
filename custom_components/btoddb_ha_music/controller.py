@@ -189,9 +189,12 @@ class MusicController:
         """
 
         if speakers is None:
-            entity_ids = sorted(self.all_media_player_entity_ids)
-            if not entity_ids:
+            all_ids = sorted(self.all_media_player_entity_ids)
+            if not all_ids:
                 raise HomeAssistantError("No speakers are configured")
+            entity_ids = self._filter_active_speakers(all_ids)
+            if not entity_ids:
+                return
         else:
             entity_ids = self._resolve_speakers(speakers)
         await self.hass.services.async_call(
@@ -200,6 +203,20 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
+
+    _INACTIVE_STATES = frozenset(
+        {STATE_UNAVAILABLE, "unknown", "off", "idle", "standby"}
+    )
+
+    def _filter_active_speakers(self, entity_ids: list[str]) -> list[str]:
+        """Return only speakers that are in an active (non-idle/offline) state."""
+
+        active = []
+        for entity_id in entity_ids:
+            state = self.hass.states.get(entity_id)
+            if state is not None and state.state not in self._INACTIVE_STATES:
+                active.append(entity_id)
+        return active
 
     def now_playing(self) -> NowPlaying:
         """Return current media metadata for the selected speaker option."""

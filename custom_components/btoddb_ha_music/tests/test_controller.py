@@ -44,8 +44,8 @@ def _controller(
 class _FakeState:
     """A minimal stand-in for a Home Assistant media_player state."""
 
-    def __init__(self, attributes: dict) -> None:
-        self.state = "playing"
+    def __init__(self, attributes: dict, *, state: str = "playing") -> None:
+        self.state = state
         self.attributes = attributes
 
 
@@ -557,3 +557,94 @@ def test_normalize_playlist_id_accepts_known_forms(raw, expected) -> None:
     """The playlist id is extracted from any pasted form."""
 
     assert _normalize_playlist_id(raw) == expected
+
+
+def _stop_controller(hass: _FakeHass, *, speakers: dict) -> MusicController:
+    """Build a controller wired to a fake hass for stop-music tests."""
+
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={"speakers": speakers, "radio_stations": {}, "playlists": {}},
+        options={},
+    )
+    return MusicController(hass, entry)
+
+
+def test_stop_music_no_target_skips_inactive_speakers() -> None:
+    """With no target, only actively-playing speakers receive the stop call."""
+
+    states = {
+        "media_player.playing": _FakeState({}, state="playing"),
+        "media_player.paused": _FakeState({}, state="paused"),
+        "media_player.unavailable": _FakeState({}, state="unavailable"),
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.off": _FakeState({}, state="off"),
+        "media_player.standby": _FakeState({}, state="standby"),
+        "media_player.unknown": _FakeState({}, state="unknown"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "All": [
+                "media_player.playing",
+                "media_player.paused",
+                "media_player.unavailable",
+                "media_player.idle",
+                "media_player.off",
+                "media_player.standby",
+                "media_player.unknown",
+            ]
+        },
+    )
+
+    asyncio.run(controller.async_stop_music())
+
+    assert len(hass.services.calls) == 1
+    _domain, _service, data, _blocking, _ret = hass.services.calls[0]
+    assert sorted(data["entity_id"]) == [
+        "media_player.paused",
+        "media_player.playing",
+    ]
+
+
+def test_stop_music_no_target_no_active_speakers_makes_no_call() -> None:
+    """With no active speakers the stop command returns without calling any service."""
+
+    states = {
+        "media_player.unavailable": _FakeState({}, state="unavailable"),
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.off": _FakeState({}, state="off"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "All": [
+                "media_player.unavailable",
+                "media_player.idle",
+                "media_player.off",
+            ]
+        },
+    )
+
+    asyncio.run(controller.async_stop_music())
+
+    assert hass.services.calls == []
+
+
+def test_stop_music_explicit_target_is_not_filtered() -> None:
+    """An explicit speaker target is passed through unchanged, regardless of state."""
+
+    states = {"media_player.idle_speaker": _FakeState({}, state="idle")}
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"Office": "media_player.idle_speaker"}
+    )
+
+    asyncio.run(controller.async_stop_music(speakers="media_player.idle_speaker"))
+
+    assert len(hass.services.calls) == 1
+    _domain, _service, data, _blocking, _ret = hass.services.calls[0]
+    assert data["entity_id"] == ["media_player.idle_speaker"]
