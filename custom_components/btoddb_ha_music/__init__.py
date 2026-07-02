@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,6 +11,8 @@ import voluptuous as vol
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.lovelace import LOVELACE_DATA
+from homeassistant.components.lovelace.resources import ResourceStorageCollection
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
@@ -32,10 +36,13 @@ from .controller import MusicController
 
 type MusicConfigEntry = ConfigEntry[MusicController]
 
+_LOGGER = logging.getLogger(__name__)
+
 ATTR_CONFIG_ENTRY = "config_entry"
 
-_CARD_URL = f"/{DOMAIN}/{DOMAIN}.js"
-_CARD_PATH = Path(__file__).parent / "www" / f"{DOMAIN}.js"
+CARD_URL_BASE = f"/{DOMAIN}"
+CARD_FILENAME = f"{DOMAIN}.js"
+_CARD_STATIC_PATH_KEY = f"{DOMAIN}_card_static_path"
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -49,13 +56,59 @@ class MusicData:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the Lovelace card as a frontend resource when the bundle exists."""
-    if _CARD_PATH.exists():
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(_CARD_URL, str(_CARD_PATH), cache_headers=False)]
-        )
-        add_extra_js_url(hass, _CARD_URL)
+    """Register the Lovelace card and serve static frontend assets."""
+    await _async_register_card(hass)
     return True
+
+
+def _card_digest(path: Path) -> str:
+    """Return a short content hash for cache-busting the card bundle URL."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """
+    Make the card available to dashboards without manual resource setup.
+
+    The card must be a Lovelace resource, not only an extra frontend module
+    (add_extra_js_url): extra modules are baked into index.html at render time,
+    and HA's service worker caches dashboard pages stale-while-revalidate. A
+    page rendered while HA was still starting can miss the module import and
+    keep showing "custom element doesn't exist" until caches turn over.
+    Lovelace resources are fetched at dashboard load, and the content-hash query
+    param busts stale HTTP/service-worker caches whenever the bundle changes.
+    """
+    www_dir = Path(__file__).parent / "www"
+    if not hass.data.get(_CARD_STATIC_PATH_KEY):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_URL_BASE, str(www_dir), cache_headers=False)]
+        )
+        hass.data[_CARD_STATIC_PATH_KEY] = True
+
+    card_path = www_dir / CARD_FILENAME
+    try:
+        digest = await hass.async_add_executor_job(_card_digest, card_path)
+    except OSError:
+        _LOGGER.exception("Card bundle missing or unreadable: %s", card_path)
+        return
+
+    base_url = f"{CARD_URL_BASE}/{CARD_FILENAME}"
+    url = f"{base_url}?v={digest}"
+
+    resources = hass.data[LOVELACE_DATA].resources
+    if not isinstance(resources, ResourceStorageCollection):
+        # YAML-managed resources are read-only to integrations; keep the older
+        # index-injected module fallback for that configuration.
+        add_extra_js_url(hass, url)
+        return
+
+    await resources.async_get_info()
+    for item in resources.async_items():
+        if item["url"].partition("?")[0] == base_url:
+            if item["url"] != url:
+                await resources.async_update_item(item["id"], {"url": url})
+            return
+    await resources.async_create_item({"res_type": "module", "url": url})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MusicConfigEntry) -> bool:
