@@ -1,5 +1,5 @@
-// v0.0.6
-const CARD_VERSION = "v0.0.6";
+// v0.0.7
+const CARD_VERSION = "v0.0.7";
 const CARD_TYPE = "btoddb-ha-music-like-card";
 
 console.info(
@@ -35,6 +35,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _rendered = false;
   private _searching = false;
   private _noMatches = false;
+  private _statusMessage = "";
+  private _lastPlayingKey = "";
 
   static getStubConfig(): CardConfig {
     return { entity_prefix: "btoddb_ha_music" };
@@ -92,7 +94,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
 
     const findStatus = document.createElement("div");
     findStatus.className = "find-status hidden";
-    findStatus.textContent = "No songs found";
     findStatus.setAttribute("role", "status");
 
     const actionRow = document.createElement("div");
@@ -151,6 +152,14 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     if (!this._rendered || !this._hass || !this.shadowRoot) return;
 
     const nowPlaying = this._hass.states[`sensor.${this._prefix}_now_playing`];
+
+    const playingKey = `${nowPlaying?.attributes?.artist ?? ""}|${nowPlaying?.attributes?.title ?? ""}`;
+    if (playingKey !== this._lastPlayingKey) {
+      this._lastPlayingKey = playingKey;
+      this._noMatches = false;
+      this._statusMessage = "";
+    }
+
     const likeCandidate = this._hass.states[`select.${this._prefix}_like_candidate`];
     const confirmState = this._hass.states[`button.${this._prefix}_confirm_like`];
     const cancelState = this._hass.states[`button.${this._prefix}_cancel_like`];
@@ -234,6 +243,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     if (findStatus) {
       const showNoMatches = this._noMatches && !this._searching && !hasCandidates;
       findStatus.classList.toggle("hidden", !showNoMatches);
+      if (showNoMatches) findStatus.textContent = this._statusMessage;
     }
 
     // Button availability
@@ -259,8 +269,10 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     this._update();
     try {
       await this._callService("find_like_matches");
-    } catch {
+    } catch (err: unknown) {
       this._noMatches = true;
+      const msg = err instanceof Error ? err.message : (err as { message?: string })?.message;
+      this._statusMessage = msg ?? "No songs found";
     } finally {
       this._searching = false;
       this._update();
