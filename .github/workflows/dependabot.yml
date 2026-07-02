@@ -1,0 +1,37 @@
+version: 2
+updates:
+    - package-ecosystem: "devcontainers"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "tuesday"
+          time: "02:00"
+          timezone: "America/Los_Angeles"
+      groups:
+          patch-and-minor:
+              update-types: ["minor", "patch"]
+
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "monday"
+          time: "02:00"
+          timezone: "America/Los_Angeles"
+      groups:
+          patch-and-minor:
+              update-types: ["minor", "patch"]
+
+    - package-ecosystem: "pip"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "wednesday"
+          time: "02:00"
+          timezone: "America/Los_Angeles"
+      groups:
+          patch-and-minor:
+              update-types: ["minor", "patch"]
+      ignore:
+          # Dependabot should not update Home Assistant as that should match the homeassistant key in hacs.json
+          - dependency-name: "homeassistant"

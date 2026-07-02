@@ -2,7 +2,7 @@
 #
 # Cut a GitHub release for this repo.
 #
-# The @claude ship command merges the PR, checks out main, then calls this
+# The /btbai ship command merges the PR, checks out main, then calls this
 # script. You can also run it directly from a clean main branch.
 #
 # Usage:
@@ -163,8 +163,8 @@ if ! "$VERSION_SET"; then
 fi
 
 if [[ -n "$BUMP" ]]; then
-    VERSION_TAG="$(next_version "$BUMP")"
-    echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
+VERSION_TAG="$(next_version "$BUMP")"
+echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
 else
     echo "Using explicit version: $VERSION_TAG"
 fi
@@ -193,7 +193,7 @@ if git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/$VERSION_TAG" | grep -
 fi
 
 # Build and bump the Lovelace card before the integration manifest is bumped.
-# run "$REPO_ROOT/scripts/deploy-card"
+run "$REPO_ROOT/scripts/deploy-card"
 
 update_manifest
 
