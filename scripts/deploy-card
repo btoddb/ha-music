@@ -2,10 +2,10 @@
 # Build the Lovelace card(s) and deploy them into the
 # integration's www/ directory.
 #
-# The integration serves the and auto-registers
-# it as a frontend module (add_extra_js_url) with no-cache headers, so after this
-# runs you only need to HARD-REFRESH the browser — there is no Lovelace resource
-# to add and no Home Assistant restart required.
+# The integration serves the bundle directory and auto-registers the built file
+# as a hash-busted Lovelace resource, so after this runs you only need to
+# HARD-REFRESH the browser. There is no manual resource to add and no Home
+# Assistant restart required.
 #
 # Requires Node/npm (provided by the devcontainer's Node feature).
 
