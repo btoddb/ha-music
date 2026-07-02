@@ -33,6 +33,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _config: CardConfig = {};
   private _hass: Hass | null = null;
   private _rendered = false;
+  private _searching = false;
+  private _noMatches = false;
 
   static getStubConfig(): CardConfig {
     return { entity_prefix: "btoddb_ha_music" };
@@ -85,8 +87,13 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const actions = document.createElement("div");
     actions.className = "card-actions";
 
-    const findBtn = this._makeButton("find-btn", "Find Matches");
-    findBtn.addEventListener("click", () => this._callService("find_like_matches"));
+    const findBtn = this._makeButton("find-btn", "Find Song");
+    findBtn.addEventListener("click", () => this._onFind());
+
+    const findStatus = document.createElement("div");
+    findStatus.className = "find-status hidden";
+    findStatus.textContent = "No songs found";
+    findStatus.setAttribute("role", "status");
 
     const actionRow = document.createElement("div");
     actionRow.className = "action-row";
@@ -98,7 +105,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
 
     actionRow.append(likeBtn, cancelBtn);
-    actions.append(findBtn, actionRow);
+    actions.append(findBtn, findStatus, actionRow);
 
     card.append(content, actions);
     shadow.append(style, card);
@@ -215,6 +222,20 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       });
     }
 
+    // Find button state: hide once we have matches, otherwise reflect the
+    // in-flight search / no-results feedback.
+    const findBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".find-btn");
+    const findStatus = this.shadowRoot.querySelector<HTMLElement>(".find-status");
+    if (findBtn) {
+      findBtn.classList.toggle("hidden", hasCandidates);
+      findBtn.disabled = this._searching;
+      findBtn.textContent = this._searching ? "Searching…" : "Find Song";
+    }
+    if (findStatus) {
+      const showNoMatches = this._noMatches && !this._searching && !hasCandidates;
+      findStatus.classList.toggle("hidden", !showNoMatches);
+    }
+
     // Button availability
     const likeBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".like-btn");
     const cancelBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".cancel-btn");
@@ -229,6 +250,21 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       entity_id: `select.${this._prefix}_like_candidate`,
       option: label,
     });
+  }
+
+  private async _onFind(): Promise<void> {
+    if (!this._hass || this._searching) return;
+    this._searching = true;
+    this._noMatches = false;
+    this._update();
+    try {
+      await this._callService("find_like_matches");
+    } catch {
+      this._noMatches = true;
+    } finally {
+      this._searching = false;
+      this._update();
+    }
   }
 
   private async _callService(service: string): Promise<void> {
@@ -365,6 +401,17 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       }
       .find-btn {
         width: 100%;
+      }
+      .find-btn.hidden {
+        display: none;
+      }
+      .find-status {
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
+        text-align: center;
+      }
+      .find-status.hidden {
+        display: none;
       }
       .action-row .ha-btn {
         flex: 1;
