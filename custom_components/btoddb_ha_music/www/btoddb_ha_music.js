@@ -9,6 +9,10 @@
         _config = {};
         _hass = null;
         _rendered = false;
+        _searching = false;
+        _noMatches = false;
+        _statusMessage = "";
+        _lastPlayingKey = "";
         static getStubConfig() {
             return { entity_prefix: "btoddb_ha_music" };
         }
@@ -47,8 +51,11 @@
             // --- Card actions ---
             const actions = document.createElement("div");
             actions.className = "card-actions";
-            const findBtn = this._makeButton("find-btn", "Find Matches");
-            findBtn.addEventListener("click", () => this._callService("find_like_matches"));
+            const findBtn = this._makeButton("find-btn", "Find Song");
+            findBtn.addEventListener("click", () => this._onFind());
+            const findStatus = document.createElement("div");
+            findStatus.className = "find-status hidden";
+            findStatus.setAttribute("role", "status");
             const actionRow = document.createElement("div");
             actionRow.className = "action-row";
             const likeBtn = this._makeButton("like-btn", "Like");
@@ -56,7 +63,7 @@
             const cancelBtn = this._makeButton("cancel-btn", "Cancel");
             cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
             actionRow.append(likeBtn, cancelBtn);
-            actions.append(findBtn, actionRow);
+            actions.append(findBtn, findStatus, actionRow);
             card.append(content, actions);
             shadow.append(style, card);
             this._rendered = true;
@@ -96,6 +103,12 @@
             if (!this._rendered || !this._hass || !this.shadowRoot)
                 return;
             const nowPlaying = this._hass.states[`sensor.${this._prefix}_now_playing`];
+            const playingKey = `${nowPlaying?.attributes?.artist ?? ""}|${nowPlaying?.attributes?.title ?? ""}`;
+            if (playingKey !== this._lastPlayingKey) {
+                this._lastPlayingKey = playingKey;
+                this._noMatches = false;
+                this._statusMessage = "";
+            }
             const likeCandidate = this._hass.states[`select.${this._prefix}_like_candidate`];
             const confirmState = this._hass.states[`button.${this._prefix}_confirm_like`];
             const cancelState = this._hass.states[`button.${this._prefix}_cancel_like`];
@@ -150,6 +163,21 @@
                     li.setAttribute("aria-selected", String(selected));
                 });
             }
+            // Find button state: hide once we have matches, otherwise reflect the
+            // in-flight search / no-results feedback.
+            const findBtn = this.shadowRoot.querySelector(".find-btn");
+            const findStatus = this.shadowRoot.querySelector(".find-status");
+            if (findBtn) {
+                findBtn.classList.toggle("hidden", hasCandidates);
+                findBtn.disabled = this._searching;
+                findBtn.textContent = this._searching ? "Searching…" : "Find Song";
+            }
+            if (findStatus) {
+                const showNoMatches = this._noMatches && !this._searching && !hasCandidates;
+                findStatus.classList.toggle("hidden", !showNoMatches);
+                if (showNoMatches)
+                    findStatus.textContent = this._statusMessage;
+            }
             // Button availability
             const likeBtn = this.shadowRoot.querySelector(".like-btn");
             const cancelBtn = this.shadowRoot.querySelector(".cancel-btn");
@@ -165,6 +193,25 @@
                 entity_id: `select.${this._prefix}_like_candidate`,
                 option: label,
             });
+        }
+        async _onFind() {
+            if (!this._hass || this._searching)
+                return;
+            this._searching = true;
+            this._noMatches = false;
+            this._update();
+            try {
+                await this._callService("find_like_matches");
+            }
+            catch (err) {
+                this._noMatches = true;
+                const msg = err instanceof Error ? err.message : err?.message;
+                this._statusMessage = msg ?? "No songs found";
+            }
+            finally {
+                this._searching = false;
+                this._update();
+            }
         }
         async _callService(service) {
             if (!this._hass)
@@ -300,6 +347,17 @@
       }
       .find-btn {
         width: 100%;
+      }
+      .find-btn.hidden {
+        display: none;
+      }
+      .find-status {
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
+        text-align: center;
+      }
+      .find-status.hidden {
+        display: none;
       }
       .action-row .ha-btn {
         flex: 1;
