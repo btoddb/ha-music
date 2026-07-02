@@ -1,5 +1,5 @@
-// v0.0.10
-const CARD_VERSION = "v0.0.10";
+// v0.0.11
+const CARD_VERSION = "v0.0.11";
 const CARD_TYPE = "btoddb-ha-music-like-card";
 
 console.info(
@@ -427,14 +427,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       }
       .action-row .ha-btn {
         flex: 1;
-      }
-      .like-btn {
-        background-color: var(--success-color, #4caf50);
-        color: #fff;
-      }
-      .cancel-btn {
-        background-color: var(--error-color, #f44336);
-        color: #fff;
       }
     `;
   }

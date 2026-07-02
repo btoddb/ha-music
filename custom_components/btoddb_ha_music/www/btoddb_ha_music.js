@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.10
-    const CARD_VERSION = "v0.0.10";
+    // v0.0.11
+    const CARD_VERSION = "v0.0.11";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -361,14 +361,6 @@
       }
       .action-row .ha-btn {
         flex: 1;
-      }
-      .like-btn {
-        background-color: var(--success-color, #4caf50);
-        color: #fff;
-      }
-      .cancel-btn {
-        background-color: var(--error-color, #f44336);
-        color: #fff;
       }
     `;
         }
