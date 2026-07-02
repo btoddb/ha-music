@@ -30,6 +30,25 @@ commit a diff outside `btoddb_ha_music`.
   rule files must be updated for the requested task.
 - Do not change, create, or delete anything in the user's production Home
   Assistant instance.
+- For any Home Assistant integration that ships a Lovelace card, register the
+  built JS bundle as a Lovelace resource with a content-hash `?v=` URL, and serve
+  the bundle directory through `hass.http.async_register_static_paths`. Do not rely
+  only on `add_extra_js_url`; those module URLs are baked into cached frontend
+  pages and can intermittently produce `Custom element doesn't exist` during HA
+  startup/cache races.
+
+## Creating AI rules
+
+- Add repository-specific rules to `ai-rules/PROJECT_CONTEXT.md` so `AGENTS.md`
+  and future coding agents load them automatically.
+- State rules as concrete invariants with the failure mode they prevent. Example:
+  Lovelace card integrations must use a storage-backed Lovelace resource with a
+  content-hash query param because `add_extra_js_url` alone can be missed by
+  service-worker-cached dashboard HTML.
+- Include the implementation hook when it matters: for Lovelace cards, import
+  `LOVELACE_DATA` and `ResourceStorageCollection`, update or create a resource
+  whose base URL matches the card bundle, and fall back to `add_extra_js_url` only
+  when resources are YAML-managed/read-only.
 
 ## Implementation details
 
