@@ -1,4 +1,4 @@
-"""Tests for BToddB HA Music model helpers."""
+"""Tests for BToddB Music model helpers."""
 
 from __future__ import annotations
 

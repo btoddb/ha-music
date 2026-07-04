@@ -1,6 +1,6 @@
 {
   "domain": "btoddb_ha_music",
-  "name": "BToddB HA Music",
+  "name": "BToddB Music",
   "after_dependencies": [
     "music_assistant"
   ],

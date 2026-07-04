@@ -1,4 +1,4 @@
-"""BToddB HA Music integration."""
+"""BToddB Music integration."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MusicConfigEntry) -> bool:
-    """Set up BToddB HA Music from a config entry."""
+    """Set up BToddB Music from a config entry."""
 
     controller = MusicController(hass, entry)
     entry.runtime_data = controller
@@ -127,7 +127,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MusicConfigEntry) -> boo
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MusicConfigEntry) -> bool:
-    """Unload a BToddB HA Music config entry."""
+    """Unload a BToddB Music config entry."""
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
@@ -283,10 +283,10 @@ def _controller_from_call(hass: HomeAssistant, call: ServiceCall) -> MusicContro
     entry_id = call.data.get(ATTR_CONFIG_ENTRY)
     if entry_id:
         if entry_id not in controllers:
-            raise HomeAssistantError(f"Unknown BToddB HA Music entry: {entry_id}")
+            raise HomeAssistantError(f"Unknown BToddB Music entry: {entry_id}")
         return controllers[entry_id]
     if not controllers:
-        raise HomeAssistantError("BToddB HA Music is not configured")
+        raise HomeAssistantError("BToddB Music is not configured")
     return next(iter(controllers.values()))
 
 

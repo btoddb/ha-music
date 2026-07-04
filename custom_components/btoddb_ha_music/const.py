@@ -1,11 +1,11 @@
-"""Constants for BToddB HA Music."""
+"""Constants for BToddB Music."""
 
 from __future__ import annotations
 
 from homeassistant.const import Platform
 
 DOMAIN = "btoddb_ha_music"
-NAME = "BToddB HA Music"
+NAME = "BToddB Music"
 
 CONF_PLAYLISTS = "playlists"
 CONF_RADIO_STATIONS = "radio_stations"

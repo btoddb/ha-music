@@ -1,4 +1,4 @@
-"""Data helpers for BToddB HA Music."""
+"""Data helpers for BToddB Music."""
 
 from __future__ import annotations
 

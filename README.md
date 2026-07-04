@@ -14,7 +14,7 @@ A custom component to bridge the gap between HA and Music Assistant(MA).  The go
 ### HACS (recommended)
 
 1. HACS → ⋮ → **Custom repositories** → add this repo's URL, category **Integration**.
-2. Install **BToddB HA Music**, then restart Home Assistant.
+2. Install **BToddB Music**, then restart Home Assistant.
 
 ### Manual
 
@@ -23,7 +23,7 @@ and restart.
 
 ### Configure
 
-**Settings → Devices & Services → Add Integration → BToddB HA Music.** Configure
+**Settings → Devices & Services → Add Integration → BToddB Music.** Configure
 the speaker group, radio station, and playlist mappings as JSON objects. Speaker
 groups map names to one `media_player` entity id or a list of `media_player`
 entity ids. Radio stations and playlists map names to the media content id that

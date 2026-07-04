@@ -1,4 +1,4 @@
-"""Config flow for BToddB HA Music."""
+"""Config flow for BToddB Music."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from .models import MappingParseError, mapping_to_json, parse_named_mapping
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for BToddB HA Music."""
+    """Handle a config flow for BToddB Music."""
 
     VERSION = 1
 
@@ -60,7 +60,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlow(config_entries.OptionsFlow):
-    """Handle BToddB HA Music options."""
+    """Handle BToddB Music options."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow."""

@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "BToddB HA Music",
+        "title": "BToddB Music",
         "description": "Configure JSON mappings. Speaker values are music_assistant media_player entity ids (a string, or a list to target several). Radio station and playlist values are Music Assistant URIs (e.g. radiobrowser://radio/... or spotify://playlist/...).",
         "data": {
           "speakers": "Speaker groups",
@@ -18,13 +18,13 @@
       "invalid_mapping": "Enter a valid JSON object. Speaker values can be a string or list of strings; radio station and playlist values must be strings."
     },
     "abort": {
-      "already_configured": "BToddB HA Music is already configured."
+      "already_configured": "BToddB Music is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "BToddB HA Music options",
+        "title": "BToddB Music options",
         "description": "Update JSON mappings. Speaker values are music_assistant media_player entity ids (a string, or a list to target several). Radio station and playlist values are Music Assistant URIs (e.g. radiobrowser://radio/... or spotify://playlist/...).",
         "data": {
           "speakers": "Speaker groups",

@@ -1,4 +1,4 @@
-"""Tests for BToddB HA Music controller resolution logic."""
+"""Tests for BToddB Music controller resolution logic."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Sensor entities for BToddB HA Music."""
+"""Sensor entities for BToddB Music."""
 
 from __future__ import annotations
 

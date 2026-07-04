@@ -1,4 +1,4 @@
-"""Controller for BToddB HA Music actions."""
+"""Controller for BToddB Music actions."""
 
 from __future__ import annotations
 
@@ -533,7 +533,7 @@ class MusicEntity(Entity):
         self._controller = controller
         self._attr_device_info = {
             "identifiers": {(controller.entry.domain, controller.entry.entry_id)},
-            "name": "BToddB HA Music",
+            "name": "BToddB Music",
         }
         self._attr_unique_id = f"{controller.entry.entry_id}_{key}"
 

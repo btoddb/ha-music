@@ -1,4 +1,4 @@
-"""Select entities for BToddB HA Music."""
+"""Select entities for BToddB Music."""
 
 from __future__ import annotations
 
