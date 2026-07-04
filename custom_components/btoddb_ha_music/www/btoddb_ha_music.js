@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.12
-    const CARD_VERSION = "v0.0.12";
+    // v0.0.13
+    const CARD_VERSION = "v0.0.13";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -10,6 +10,7 @@
         _hass = null;
         _rendered = false;
         _searching = false;
+        _skipping = false;
         _noMatches = false;
         _statusMessage = "";
         _lastPlayingKey = "";
@@ -51,8 +52,13 @@
             // --- Card actions ---
             const actions = document.createElement("div");
             actions.className = "card-actions";
+            const findRow = document.createElement("div");
+            findRow.className = "find-row";
             const findBtn = this._makeButton("find-btn", "Find Song");
             findBtn.addEventListener("click", () => this._onFind());
+            const skipBtn = this._makeButton("skip-btn", "Skip Song");
+            skipBtn.addEventListener("click", () => this._onSkip());
+            findRow.append(findBtn, skipBtn);
             const findStatus = document.createElement("div");
             findStatus.className = "find-status hidden";
             findStatus.setAttribute("role", "status");
@@ -63,7 +69,7 @@
             const cancelBtn = this._makeButton("cancel-btn", "Cancel");
             cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
             actionRow.append(likeBtn, cancelBtn);
-            actions.append(findBtn, findStatus, actionRow);
+            actions.append(findRow, findStatus, actionRow);
             card.append(content, actions);
             shadow.append(style, card);
             this._rendered = true;
@@ -178,6 +184,12 @@
                 if (showNoMatches)
                     findStatus.textContent = this._statusMessage;
             }
+            // Skip button state (always available, shows transient "Skipping…" text)
+            const skipBtn = this.shadowRoot.querySelector(".skip-btn");
+            if (skipBtn) {
+                skipBtn.disabled = this._skipping;
+                skipBtn.textContent = this._skipping ? "Skipping…" : "Skip Song";
+            }
             // Button availability
             const likeBtn = this.shadowRoot.querySelector(".like-btn");
             const cancelBtn = this.shadowRoot.querySelector(".cancel-btn");
@@ -210,6 +222,22 @@
             }
             finally {
                 this._searching = false;
+                this._update();
+            }
+        }
+        async _onSkip() {
+            if (!this._hass || this._skipping)
+                return;
+            this._skipping = true;
+            this._update();
+            try {
+                await this._callService("next_track");
+            }
+            catch (err) {
+                console.warn("[btoddb-ha-music] next_track failed:", err);
+            }
+            finally {
+                this._skipping = false;
                 this._update();
             }
         }
@@ -345,8 +373,12 @@
         box-shadow: none;
         cursor: not-allowed;
       }
-      .find-btn {
-        width: 100%;
+      .find-row {
+        display: flex;
+        gap: 8px;
+      }
+      .find-row .ha-btn {
+        flex: 1;
       }
       .find-btn.hidden {
         display: none;

@@ -28,6 +28,7 @@ from .const import (
     SERVICE_CANCEL_LIKE,
     SERVICE_CONFIRM_LIKE,
     SERVICE_FIND_LIKE_MATCHES,
+    SERVICE_NEXT_TRACK,
     SERVICE_PLAY_RADIO_STATION,
     SERVICE_SHUFFLE_PLAY_PLAYLIST,
     SERVICE_STOP_MUSIC,
@@ -186,6 +187,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
         controller = _controller_from_call(hass, call)
         await controller.async_cancel_like()
 
+    async def next_track(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_next_track(speakers=call.data.get(ATTR_SPEAKERS))
+
     speaker_value = vol.Any(cv.string, vol.All(cv.ensure_list, [cv.string]))
     hass.services.async_register(
         DOMAIN,
@@ -240,6 +245,17 @@ def _async_register_services(hass: HomeAssistant) -> None:
         cancel_like,
         schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_NEXT_TRACK,
+        next_track,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
+                vol.Optional(ATTR_SPEAKERS): speaker_value,
+            }
+        ),
+    )
     data.services_registered = True
 
 
@@ -254,6 +270,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_FIND_LIKE_MATCHES,
         SERVICE_CONFIRM_LIKE,
         SERVICE_CANCEL_LIKE,
+        SERVICE_NEXT_TRACK,
     ):
         hass.services.async_remove(DOMAIN, service)
     data.services_registered = False

@@ -648,3 +648,66 @@ def test_stop_music_explicit_target_is_not_filtered() -> None:
     assert len(hass.services.calls) == 1
     _domain, _service, data, _blocking, _ret = hass.services.calls[0]
     assert data["entity_id"] == ["media_player.idle_speaker"]
+
+
+def test_next_track_no_target_skips_only_active_speakers() -> None:
+    """With no target, only actively-playing speakers receive the next_track call."""
+
+    states = {
+        "media_player.playing": _FakeState({}, state="playing"),
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.unavailable": _FakeState({}, state="unavailable"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "All": [
+                "media_player.playing",
+                "media_player.idle",
+                "media_player.unavailable",
+            ]
+        },
+    )
+
+    asyncio.run(controller.async_next_track())
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_next_track"
+    assert data["entity_id"] == ["media_player.playing"]
+
+
+def test_next_track_no_active_speakers_makes_no_call() -> None:
+    """With no active speakers the next_track command returns without calling any service."""
+
+    states = {
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.off": _FakeState({}, state="off"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={"All": ["media_player.idle", "media_player.off"]},
+    )
+
+    asyncio.run(controller.async_next_track())
+
+    assert hass.services.calls == []
+
+
+def test_next_track_explicit_target_is_not_filtered() -> None:
+    """An explicit speaker target is passed through unchanged, regardless of state."""
+
+    states = {"media_player.idle_speaker": _FakeState({}, state="idle")}
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"Office": "media_player.idle_speaker"}
+    )
+
+    asyncio.run(controller.async_next_track(speakers="media_player.idle_speaker"))
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_next_track"
+    assert data["entity_id"] == ["media_player.idle_speaker"]
