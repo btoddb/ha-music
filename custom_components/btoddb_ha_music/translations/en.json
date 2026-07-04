@@ -73,6 +73,9 @@
       },
       "cancel_like": {
         "name": "Cancel like"
+      },
+      "next_track": {
+        "name": "Skip song"
       }
     },
     "sensor": {

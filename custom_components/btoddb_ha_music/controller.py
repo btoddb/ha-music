@@ -14,6 +14,7 @@ from homeassistant.components.media_player.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    SERVICE_MEDIA_NEXT_TRACK,
     SERVICE_MEDIA_STOP,
     SERVICE_SHUFFLE_SET,
     STATE_UNAVAILABLE,
@@ -188,15 +189,9 @@ class MusicController:
         specific target can still be passed via the service call.
         """
 
-        if speakers is None:
-            all_ids = sorted(self.all_media_player_entity_ids)
-            if not all_ids:
-                raise HomeAssistantError("No speakers are configured")
-            entity_ids = self._filter_active_speakers(all_ids)
-            if not entity_ids:
-                return
-        else:
-            entity_ids = self._resolve_speakers(speakers)
+        entity_ids = self._resolve_active_targets(speakers=speakers)
+        if not entity_ids:
+            return
         await self.hass.services.async_call(
             MEDIA_PLAYER_DOMAIN,
             SERVICE_MEDIA_STOP,
@@ -204,9 +199,44 @@ class MusicController:
             blocking=True,
         )
 
+    async def async_next_track(
+        self, *, speakers: str | list[str] | None = None
+    ) -> None:
+        """Skip to the next track.
+
+        With no target this skips only the actively-playing configured speakers.
+        A specific target can still be passed via the service call.
+        """
+
+        entity_ids = self._resolve_active_targets(speakers=speakers)
+        if not entity_ids:
+            return
+        await self.hass.services.async_call(
+            MEDIA_PLAYER_DOMAIN,
+            SERVICE_MEDIA_NEXT_TRACK,
+            {"entity_id": entity_ids},
+            blocking=True,
+        )
+
     _INACTIVE_STATES = frozenset(
         {STATE_UNAVAILABLE, "unknown", "off", "idle", "standby"}
     )
+
+    def _resolve_active_targets(self, *, speakers: str | list[str] | None) -> list[str]:
+        """Resolve targets for stop/skip commands.
+
+        With no explicit target, resolves to only the actively-playing configured
+        speakers (raises when none are configured at all; returns [] when none are
+        currently active so the caller can short-circuit). An explicit target is
+        passed through unchanged regardless of playback state.
+        """
+
+        if speakers is None:
+            all_ids = sorted(self.all_media_player_entity_ids)
+            if not all_ids:
+                raise HomeAssistantError("No speakers are configured")
+            return self._filter_active_speakers(all_ids)
+        return self._resolve_speakers(speakers)
 
     def _filter_active_speakers(self, entity_ids: list[str]) -> list[str]:
         """Return only speakers that are in an active (non-idle/offline) state."""

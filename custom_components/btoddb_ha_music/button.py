@@ -62,6 +62,13 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
                 controller.async_cancel_like,
                 lambda: controller.like_enabled and bool(controller.like_candidates),
             ),
+            MusicActionButton(
+                controller,
+                "next_track",
+                "next_track",
+                controller.async_next_track,
+                lambda: bool(controller.speakers),
+            ),
         ]
     )
 

@@ -26,6 +26,7 @@ SERVICE_STOP_MUSIC = "stop_music"
 SERVICE_FIND_LIKE_MATCHES = "find_like_matches"
 SERVICE_CONFIRM_LIKE = "confirm_like"
 SERVICE_CANCEL_LIKE = "cancel_like"
+SERVICE_NEXT_TRACK = "next_track"
 
 PLATFORMS = (Platform.SELECT, Platform.BUTTON, Platform.SENSOR)
 

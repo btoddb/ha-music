@@ -1,5 +1,5 @@
-// v0.0.12
-const CARD_VERSION = "v0.0.12";
+// v0.0.13
+const CARD_VERSION = "v0.0.13";
 const CARD_TYPE = "btoddb-ha-music-like-card";
 
 console.info(
@@ -34,6 +34,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _hass: Hass | null = null;
   private _rendered = false;
   private _searching = false;
+  private _skipping = false;
   private _noMatches = false;
   private _statusMessage = "";
   private _lastPlayingKey = "";
@@ -89,8 +90,16 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const actions = document.createElement("div");
     actions.className = "card-actions";
 
+    const findRow = document.createElement("div");
+    findRow.className = "find-row";
+
     const findBtn = this._makeButton("find-btn", "Find Song");
     findBtn.addEventListener("click", () => this._onFind());
+
+    const skipBtn = this._makeButton("skip-btn", "Skip Song");
+    skipBtn.addEventListener("click", () => this._onSkip());
+
+    findRow.append(findBtn, skipBtn);
 
     const findStatus = document.createElement("div");
     findStatus.className = "find-status hidden";
@@ -106,7 +115,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
 
     actionRow.append(likeBtn, cancelBtn);
-    actions.append(findBtn, findStatus, actionRow);
+    actions.append(findRow, findStatus, actionRow);
 
     card.append(content, actions);
     shadow.append(style, card);
@@ -246,6 +255,13 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       if (showNoMatches) findStatus.textContent = this._statusMessage;
     }
 
+    // Skip button state (always available, shows transient "Skipping…" text)
+    const skipBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".skip-btn");
+    if (skipBtn) {
+      skipBtn.disabled = this._skipping;
+      skipBtn.textContent = this._skipping ? "Skipping…" : "Skip Song";
+    }
+
     // Button availability
     const likeBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".like-btn");
     const cancelBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".cancel-btn");
@@ -275,6 +291,18 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       this._statusMessage = msg ?? "No songs found";
     } finally {
       this._searching = false;
+      this._update();
+    }
+  }
+
+  private async _onSkip(): Promise<void> {
+    if (!this._hass || this._skipping) return;
+    this._skipping = true;
+    this._update();
+    try {
+      await this._callService("next_track");
+    } finally {
+      this._skipping = false;
       this._update();
     }
   }
@@ -411,8 +439,12 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         box-shadow: none;
         cursor: not-allowed;
       }
-      .find-btn {
-        width: 100%;
+      .find-row {
+        display: flex;
+        gap: 8px;
+      }
+      .find-row .ha-btn {
+        flex: 1;
       }
       .find-btn.hidden {
         display: none;

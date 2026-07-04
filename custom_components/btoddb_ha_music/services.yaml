@@ -60,3 +60,14 @@ cancel_like:
       example: "01J00000000000000000000000"
       selector:
         text:
+next_track:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+    speakers:
+      example: "Whole House"
+      selector:
+        object:
