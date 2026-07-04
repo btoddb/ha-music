@@ -1,7 +1,7 @@
-# Card — BToddB HA Music Lovelace Card
+# Card — BToddB Music Lovelace Card
 
 TypeScript source for the `btoddb-ha-music-like-card` Lovelace card shipped with the
-`btoddb_ha_music` integration.
+`btoddb_ha_music` integration.  Located in custom_components/btoddb_ha_music/card
 
 ## Building
 
