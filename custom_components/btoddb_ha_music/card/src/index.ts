@@ -301,6 +301,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     this._update();
     try {
       await this._callService("next_track");
+    } catch (err: unknown) {
+      console.warn("[btoddb-ha-music] next_track failed:", err);
     } finally {
       this._skipping = false;
       this._update();

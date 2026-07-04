@@ -233,6 +233,9 @@
             try {
                 await this._callService("next_track");
             }
+            catch (err) {
+                console.warn("[btoddb-ha-music] next_track failed:", err);
+            }
             finally {
                 this._skipping = false;
                 this._update();
