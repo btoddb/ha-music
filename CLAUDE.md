@@ -1,6 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code for working with code in this repository.
+This file provides specific guidance to Claude Code for working with this repository.  This file is only needed if there is something Claude specific, otherwise simply use [AGENTS.md](./AGENTS.md).
 
-**constraint** Follow all the rules in every file in directory, ai-rules.
-**constraint** Add Claude rules to ai-rules/PROJECT_CONTEXT.md
+**constraint** Always follow all rules in [AGENTS.md](./AGENTS.md).
