@@ -54,6 +54,21 @@ def make_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
     return repo, pipeline_root, component / "manifest.json"
 
 
+def make_repo_without_pipeline(tmp_path: Path) -> tuple[Path, Path]:
+    repo = tmp_path / "repo"
+    component = repo / "custom_components" / "btoddb_ha_music"
+    scripts = repo / "scripts"
+    repo.mkdir()
+    component.mkdir(parents=True)
+    scripts.mkdir()
+
+    shutil.copy2(SHIP, scripts / "ship")
+    (component / "manifest.json").write_text(
+        json.dumps({"version": "v0.0.16"}, indent=2) + "\n"
+    )
+    return repo, component / "manifest.json"
+
+
 def test_ship_translates_bump_from_manifest_to_base_set_version(tmp_path: Path) -> None:
     repo, pipeline_root, _manifest = make_repo(tmp_path)
     args_file = tmp_path / "args.txt"
@@ -107,6 +122,62 @@ def test_ship_rejects_multiple_version_options(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "choose only one version option" in result.stderr
+
+
+def test_ship_bootstraps_default_local_pipeline_checkout(tmp_path: Path) -> None:
+    repo, _manifest = make_repo_without_pipeline(tmp_path)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    git_log = tmp_path / "git.log"
+    args_file = tmp_path / "args.txt"
+    fake_git = fake_bin / "git"
+    write_executable(
+        fake_git,
+        "#!/usr/bin/env bash\n"
+        f"printf '%s\\n' \"$*\" >> {git_log}\n"
+        'if [[ "$1" == "clone" ]]; then\n'
+        '  destination="${@: -1}"\n'
+        '  mkdir -p "$destination/scripts"\n'
+        "  cat > \"$destination/scripts/btb-ship-base\" <<'EOF'\n"
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\\n\' "$@" > "$BTB_BASE_ARGS_FILE"\n'
+        "EOF\n"
+        '  chmod +x "$destination/scripts/btb-ship-base"\n'
+        "fi\n",
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env["BTB_BASE_ARGS_FILE"] = str(args_file)
+    env.pop("BTB_PIPELINE_ROOT", None)
+
+    result = run([str(repo / "scripts" / "ship"), "--bump-patch"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Fetching btb-pipeline@v1" in result.stdout
+    assert git_log.read_text().splitlines() == [
+        "clone --quiet --config advice.detachedHead=false --depth 1 --branch v1 "
+        "https://github.com/btoddb/btb-pipeline.git "
+        f"{repo / '.btb-pipeline'}"
+    ]
+    assert args_file.read_text().splitlines() == [
+        "--repo-root",
+        str(repo),
+        "--set-version",
+        "v0.0.17",
+    ]
+
+
+def test_ship_does_not_bootstrap_when_pipeline_root_is_explicit(
+    tmp_path: Path,
+) -> None:
+    repo, _manifest = make_repo_without_pipeline(tmp_path)
+    env = os.environ.copy()
+    env["BTB_PIPELINE_ROOT"] = str(tmp_path / "missing-pipeline")
+
+    result = run([str(repo / "scripts" / "ship"), "--bump-patch"], repo, env)
+
+    assert result.returncode == 1
+    assert "BTB_PIPELINE_ROOT is set" in result.stderr
 
 
 def test_before_release_hook_builds_card_and_updates_manifest(tmp_path: Path) -> None:

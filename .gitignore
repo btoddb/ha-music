@@ -13,6 +13,7 @@ custom_components/btoddb_ha_music/card/btoddb-ha-reminders.js.map
 # local stuff
 devcontainer-lock.json
 .devcontainer-lock.json
+.btb-pipeline/
 
 # misc
 .coverage

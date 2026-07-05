@@ -82,6 +82,40 @@ next_version() {
     esac
 }
 
+ensure_base_ship() {
+    if [[ -x "$BASE_SHIP" ]]; then
+        return
+    fi
+
+    if [[ -n "${BTB_PIPELINE_ROOT:-}" ]]; then
+        echo "ship: expected executable base ship command at $BASE_SHIP" >&2
+        echo "ship: BTB_PIPELINE_ROOT is set, so fix that checkout or unset it to use .btb-pipeline." >&2
+        exit 1
+    fi
+
+    if [[ -e "$PIPELINE_ROOT" && ! -d "$PIPELINE_ROOT/.git" ]]; then
+        echo "ship: $PIPELINE_ROOT exists but is not a btb-pipeline git checkout." >&2
+        echo "ship: remove it or set BTB_PIPELINE_ROOT to a checkout containing scripts/btb-ship-base." >&2
+        exit 1
+    fi
+
+    if [[ -d "$PIPELINE_ROOT/.git" ]]; then
+        echo "Updating local btb-pipeline checkout at $PIPELINE_ROOT ..."
+        git -C "$PIPELINE_ROOT" fetch --quiet --depth 1 --force origin refs/tags/v1:refs/tags/v1
+        git -C "$PIPELINE_ROOT" checkout --quiet v1
+    else
+        echo "Fetching btb-pipeline@v1 into $PIPELINE_ROOT ..."
+        git clone --quiet --config advice.detachedHead=false --depth 1 --branch v1 \
+            https://github.com/btoddb/btb-pipeline.git \
+            "$PIPELINE_ROOT"
+    fi
+
+    if [[ ! -x "$BASE_SHIP" ]]; then
+        echo "ship: expected executable base ship command at $BASE_SHIP after fetching btb-pipeline@v1" >&2
+        exit 1
+    fi
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version | --set-version)
@@ -131,11 +165,7 @@ if [[ ! "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     die "version tag '$VERSION_TAG' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
 fi
 
-if [[ ! -x "$BASE_SHIP" ]]; then
-    echo "ship: expected executable base ship command at $BASE_SHIP" >&2
-    echo "ship: in /btbai ship, the reusable workflow checks out btoddb/btb-pipeline there." >&2
-    exit 1
-fi
+ensure_base_ship
 
 exec "$BASE_SHIP" \
     --repo-root "$REPO_ROOT" \
