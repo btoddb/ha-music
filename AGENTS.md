@@ -1,5 +1,10 @@
 # Agents
 
+## Python
+
+**constraint** Use requirements.txt to bootstrap dependencies
+**constraint** Run pytest before committing any changes
+
 <!--
 
   This is the shared generic AGENTS config.  Paste this in your repo's AGENTS.md file.

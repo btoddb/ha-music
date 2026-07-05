@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# Build generated card assets and update the integration manifest before the
+# shared base ship command creates the release commit.
+#
+set -euo pipefail
+
+REPO_ROOT="${BTB_REPO_ROOT:?BTB_REPO_ROOT is required}"
+VERSION_TAG="${BTB_VERSION_TAG:?BTB_VERSION_TAG is required}"
+DRY_RUN="${BTB_DRY_RUN:-false}"
+MANIFEST="$REPO_ROOT/custom_components/btoddb_ha_music/manifest.json"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo "DRY-RUN: $REPO_ROOT/scripts/deploy-card"
+    echo "DRY-RUN: update $MANIFEST version to $VERSION_TAG"
+    exit 0
+fi
+
+"$REPO_ROOT/scripts/deploy-card"
+
+tmp="$(mktemp)"
+jq --arg v "$VERSION_TAG" '.version = $v' "$MANIFEST" > "$tmp"
+mv "$tmp" "$MANIFEST"

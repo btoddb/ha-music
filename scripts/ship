@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 #
-# Cut a GitHub release for this repo.
+# Thin /btbai ship wrapper for this client repository.
 #
-# The /btbai ship command merges the PR, checks out main, then calls this
-# script. You can also run it directly from a clean main branch.
+# Common release mechanics live in btoddb/btb-pipeline/scripts/btb-ship-base.
+# This wrapper keeps ha-music's manifest-based version selection and delegates
+# commit/tag/release mechanics to the shared base command.
 #
 # Usage:
-#   scripts/ship --set-version v1.2.3    # pre-release; set manifest version explicitly
-#   scripts/ship --bump-patch            # pre-release; increment manifest X.Y.Z to X.Y.(Z+1)
-#   scripts/ship --bump-minor            # pre-release; increment manifest X.Y.Z to X.(Y+1).0
-#   scripts/ship --bump-major            # pre-release; increment manifest X.Y.Z to (X+1).0.0
+#   scripts/ship --version v1.2.3        # pre-release; set manifest version explicitly
+#   scripts/ship --set-version v1.2.3    # same as --version
+#   scripts/ship --bump-patch            # pre-release; increment manifest X.Y.(Z+1)
+#   scripts/ship --bump-minor            # pre-release; increment manifest X.(Y+1).0
+#   scripts/ship --bump-major            # pre-release; increment manifest (X+1).0.0
 #   scripts/ship --public-release --set-version v1.2.3
 #                                         # full release; label: latest, title: <tag>
-#   scripts/ship --dry-run --set-version v1.2.3
-#                                         # print every command, change nothing
-#
-# Bump versions are resolved from custom_components/<repo>/manifest.json.
+#   scripts/ship --dry-run --bump-patch  # print release actions, change nothing
 #
 set -euo pipefail
 
@@ -23,13 +22,14 @@ COMPONENT_INSTALL_DIR=btoddb_ha_music
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PIPELINE_ROOT="${BTB_PIPELINE_ROOT:-$REPO_ROOT/.btb-pipeline}"
+BASE_SHIP="$PIPELINE_ROOT/scripts/btb-ship-base"
 MANIFEST="$REPO_ROOT/custom_components/${COMPONENT_INSTALL_DIR}/manifest.json"
 
-PUBLIC_RELEASE=false
-DRY_RUN=false
 BUMP=""
 VERSION_TAG=""
 VERSION_SET=false
+BASE_ARGS=()
 
 die() {
     echo "ship: $*" >&2
@@ -37,47 +37,35 @@ die() {
 }
 
 usage() {
-    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-set_bump() {
+set_version_option() {
     if "$VERSION_SET"; then
         echo "ship: choose only one version option" >&2
         exit 2
     fi
+    VERSION_TAG="v${1#v}"
+    VERSION_SET=true
+}
 
+set_bump_option() {
+    if "$VERSION_SET"; then
+        echo "ship: choose only one version option" >&2
+        exit 2
+    fi
     BUMP="$1"
     VERSION_SET=true
 }
 
-set_version() {
-    if "$VERSION_SET"; then
-        echo "ship: choose only one version option" >&2
-        exit 2
-    fi
-
-    if [[ $# -ne 1 || -z "$1" ]]; then
-        echo "ship: --set-version requires a value (e.g. --set-version v1.2.3)" >&2
-        exit 2
-    fi
-
-    VERSION_TAG="$1"
-    VERSION_SET=true
-}
-
-run() {
-    if "$DRY_RUN"; then
-        echo "DRY-RUN: $*"
-    else
-        echo "+ $*"
-        "$@"
-    fi
+manifest_version() {
+    jq -r '.version // empty' "$MANIFEST"
 }
 
 next_version() {
     local current major minor patch
 
-    current=$(jq -r '.version // empty' "$MANIFEST")
+    current="$(manifest_version)"
     if [[ ! "$current" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
         die "manifest version '$current' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
     fi
@@ -87,84 +75,54 @@ next_version() {
     patch="${BASH_REMATCH[3]}"
 
     case "$1" in
-        patch)
-            echo "v${major}.${minor}.$((10#$patch + 1))"
-            ;;
-        minor)
-            echo "v${major}.$((10#$minor + 1)).0"
-            ;;
-        major)
-            echo "v$((10#$major + 1)).0.0"
-            ;;
-        *)
-            die "unknown bump type '$1'"
-            ;;
+        patch) printf 'v%s.%s.%s\n' "$major" "$minor" "$((10#$patch + 1))" ;;
+        minor) printf 'v%s.%s.0\n' "$major" "$((10#$minor + 1))" ;;
+        major) printf 'v%s.0.0\n' "$((10#$major + 1))" ;;
+        *) die "unknown bump type '$1'" ;;
     esac
-}
-
-update_manifest() {
-    if "$DRY_RUN"; then
-        echo "DRY-RUN: update $MANIFEST version to $VERSION_TAG"
-        return
-    fi
-
-    local tmp
-    tmp="$(mktemp)"
-    jq --arg v "$VERSION_TAG" '.version = $v' "$MANIFEST" > "$tmp"
-    mv "$tmp" "$MANIFEST"
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --public-release)
-            PUBLIC_RELEASE=true
-            ;;
-        --bump-patch)
-            set_bump patch
-            ;;
-        --bump-minor)
-            set_bump minor
-            ;;
-        --bump-major)
-            set_bump major
-            ;;
-        --set-version)
+        --version | --set-version)
+            option="$1"
             shift
             if [[ $# -eq 0 || "${1:-}" == --* ]]; then
-                echo "ship: --set-version requires a value (e.g. --set-version v1.2.3)" >&2
+                echo "ship: $option requires a value (e.g. $option v1.2.3)" >&2
                 exit 2
             fi
-            set_version "${1:-}"
+            set_version_option "$1"
             ;;
-        --set-version=*)
-            set_version "${1#*=}"
+        --version=* | --set-version=*)
+            set_version_option "${1#*=}"
             ;;
-        --dry-run)
-            DRY_RUN=true
+        --bump-patch)
+            set_bump_option patch
+            ;;
+        --bump-minor)
+            set_bump_option minor
+            ;;
+        --bump-major)
+            set_bump_option major
             ;;
         -h | --help)
             usage
             exit 0
             ;;
-        --force)
-            # The workflow consumes --force before invoking this script; tolerate it
-            # if forwarded so release creation remains deterministic.
-            ;;
         *)
-            echo "ship: unknown argument '$1' (try --help)" >&2
-            exit 2
+            BASE_ARGS+=("$1")
             ;;
     esac
     shift
 done
 
 if ! "$VERSION_SET"; then
-    die "choose a version option: --set-version vX.Y.Z, --bump-patch, --bump-minor, or --bump-major"
+    die "choose a version option: --version vX.Y.Z, --set-version vX.Y.Z, --bump-patch, --bump-minor, or --bump-major"
 fi
 
 if [[ -n "$BUMP" ]]; then
-VERSION_TAG="$(next_version "$BUMP")"
-echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
+    VERSION_TAG="$(next_version "$BUMP")"
+    echo "Using next $BUMP version from manifest.json: $VERSION_TAG"
 else
     echo "Using explicit version: $VERSION_TAG"
 fi
@@ -173,53 +131,13 @@ if [[ ! "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     die "version tag '$VERSION_TAG' is invalid - must be 'v' followed by exactly 3 dot-separated integers (e.g. v1.2.3)"
 fi
 
-CURRENT_BRANCH=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
-    die "must be on 'main' (currently on '$CURRENT_BRANCH')"
-fi
-
-if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
-    echo "ship: working tree is not clean - commit or stash first" >&2
-    git -C "$REPO_ROOT" status --short
+if [[ ! -x "$BASE_SHIP" ]]; then
+    echo "ship: expected executable base ship command at $BASE_SHIP" >&2
+    echo "ship: in /btbai ship, the reusable workflow checks out btoddb/btb-pipeline there." >&2
     exit 1
 fi
 
-if git -C "$REPO_ROOT" tag --list "$VERSION_TAG" | grep -q .; then
-    die "tag '$VERSION_TAG' already exists locally"
-fi
-
-if git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/$VERSION_TAG" | grep -q .; then
-    die "tag '$VERSION_TAG' already exists on remote"
-fi
-
-# Build and bump the Lovelace card before the integration manifest is bumped.
-run "$REPO_ROOT/scripts/deploy-card"
-
-update_manifest
-
-# Commit (manifest bump + card build artifacts from deploy-card:
-# www/ bundle, card/package.json, card/src/index.ts). The tree was verified
-# clean above, so everything dirty now comes from this release.
-run git -C "$REPO_ROOT" add -A
-run git -C "$REPO_ROOT" commit -m "release $VERSION_TAG"
-
-run git -C "$REPO_ROOT" tag "$VERSION_TAG"
-
-run git -C "$REPO_ROOT" push origin main
-run git -C "$REPO_ROOT" push origin "$VERSION_TAG"
-
-if [[ "$PUBLIC_RELEASE" == true ]]; then
-    echo "Cutting public release $VERSION_TAG:"
-    run gh release create "$VERSION_TAG" \
-        --title "$VERSION_TAG" \
-        --latest \
-        --generate-notes
-else
-    echo "Cutting pre-release $VERSION_TAG:"
-    run gh release create "$VERSION_TAG" \
-        --title "$VERSION_TAG-beta" \
-        --prerelease \
-        --generate-notes
-fi
-
-echo "Done. Release '$VERSION_TAG' is live."
+exec "$BASE_SHIP" \
+    --repo-root "$REPO_ROOT" \
+    --set-version "$VERSION_TAG" \
+    "${BASE_ARGS[@]}"

@@ -1,8 +1,9 @@
 # Requirements
 
-This folder is the **functional source of truth** for this Home Assistant (HA) integration.
-It is written for both humans and the AI agent. If the code and a `spec/` file
-disagree, that's a bug in one of them — say so rather than guessing.
+This folder is the **functional source of truth** for this Home Assistant (HA)
+integration. It is written for both humans and the AI agent. If the code and a
+`spec/` file disagree, that's a bug in one of them — say so rather than
+guessing.
 
 ## Layout
 
@@ -14,9 +15,8 @@ disagree, that's a bug in one of them — say so rather than guessing.
 
 Spec files:
 
-- [`spec/climate-control.md`](spec/climate-control.md) — the reactive control engine: devices, use toggles, targets, thresholds, fan-speed tiers, fan-only override, manual mode, constraints.
-- [`spec/profiles.md`](spec/profiles.md) — daily climate profiles: data model, scheduling, apply semantics, copy/paste.
-- [`spec/card-ux.md`](spec/card-ux.md) — the Lovelace card: layout, settings/energy/history dialogs, profiles section, UX rules.
+- [`spec/release.md`](spec/release.md) — the repository release workflow,
+  including the `/btbai ship` wrapper and repo-local release hook behavior.
 
 ## How to write requirements (for humans)
 
@@ -35,6 +35,6 @@ Spec files:
 
 ## Conventions that apply everywhere
 
-- Temperatures are in **°F**. Comparisons truncate to whole degrees (`int()`); displays may show tenths. (`CC` spec, fan/threshold rules.)
-- "Device types" are always **cooling / heating / fan** in that canonical order. A room only has the devices it's configured with — absent devices are ignored everywhere (no card section, no rules, no entities).
-- The control engine ([`engine.py`](../custom_components/room_climate_controller/engine.py)) is a **pure function** with no HA imports, so its rules are unit-tested in plain Python. Behavior rules in `spec/climate-control.md` should map directly onto it.
+- Integration behavior lives under `custom_components/btoddb_ha_music/`.
+- Generated Lovelace card bundles are managed by `scripts/deploy-card`; edit the
+  TypeScript source and let the script update tracked generated assets.
