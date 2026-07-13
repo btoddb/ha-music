@@ -335,13 +335,21 @@ class MusicController:
             entity_ids = self._collapse_queue_targets(entity_ids)
         if not entity_ids:
             return
+        # Mark the pause BEFORE issuing media_pause. Music Assistant reports a
+        # paused player as "idle", and its state event can arrive while the
+        # blocking call is still awaited. If is_paused were not yet set, that
+        # event would see every speaker idle, count playback as inactive, and
+        # reset the now-playing start detector — so the pause would re-record
+        # the current track as a duplicate play once is_paused flipped true
+        # (issue #40 follow-up). Keeping is_paused true across the transition
+        # keeps playback_active() true, so the paused track is never re-added.
+        self._set_paused_entity_ids(entity_ids)
         await self.hass.services.async_call(
             MEDIA_PLAYER_DOMAIN,
             SERVICE_MEDIA_PAUSE,
             {"entity_id": entity_ids},
             blocking=True,
         )
-        self._set_paused_entity_ids(entity_ids)
 
     async def async_resume_music(
         self, *, speakers: str | list[str] | None = None
@@ -486,20 +494,11 @@ class MusicController:
         )
 
     def now_playing(self) -> NowPlaying:
-        """Return current media metadata for the selected speaker option.
-
-        While this controller holds a pause, prefer the track it paused when
-        the live metadata reads as degraded. Music Assistant reports a paused
-        player as "idle" and drops part of its media metadata (typically the
-        artist), which would otherwise surface as a second, partial-metadata
-        "now playing" that no longer matches the paused track in the history
-        (issue #40 follow-up) and re-records a duplicate play on resume.
-        """
+        """Return current media metadata for the selected speaker option."""
 
         if self.selected_speakers is None:
             return NowPlaying("unknown", None, "unknown", "unknown", None)
 
-        resolved = NowPlaying("unknown", None, "unknown", "unknown", None)
         for entity_id in self._resolve_speakers(self.selected_speakers):
             state = self.hass.states.get(entity_id)
             if state is None or state.state == STATE_UNAVAILABLE:
@@ -509,18 +508,11 @@ class MusicController:
             title = state.attributes.get(ATTR_MEDIA_TITLE)
             album = state.attributes.get(ATTR_MEDIA_ALBUM_NAME)
             display = " - ".join(part for part in (artist, title) if part) or "unknown"
-            resolved = NowPlaying(
+            return NowPlaying(
                 display, entity_id, artist or "unknown", title or "unknown", album
             )
-            break
 
-        if (
-            self.is_paused
-            and self._last_now_playing is not None
-            and (resolved.artist == "unknown" or resolved.title == "unknown")
-        ):
-            return self._last_now_playing
-        return resolved
+        return NowPlaying("unknown", None, "unknown", "unknown", None)
 
     @callback
     def record_now_playing(

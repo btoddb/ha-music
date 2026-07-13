@@ -1344,12 +1344,13 @@ def test_record_now_playing_pause_does_not_reset_or_duplicate() -> None:
     ]
 
 
-def test_now_playing_keeps_paused_track_when_metadata_degrades() -> None:
-    """A paused (idle) player that drops its artist still reads as the paused track.
+def test_pause_marks_paused_before_issuing_media_pause() -> None:
+    """is_paused is set before the media_pause call (issue #40 follow-up).
 
-    Music Assistant reports a paused player as "idle" and can drop part of its
-    media metadata; without this the card would show a second partial-metadata
-    now-playing entry that no longer matches the paused track (issue #40).
+    Music Assistant reports a paused player as "idle" and its state event can
+    arrive while the blocking media_pause is still awaited. is_paused must
+    already be true then, so playback_active() stays true and the racing idle
+    event does not reset now-playing start detection.
     """
 
     states = {
@@ -1360,22 +1361,28 @@ def test_now_playing_keeps_paused_track_when_metadata_degrades() -> None:
     }
     hass = _FakeHass(states=states)
     controller = _play_controller(hass, speakers={"Office": "media_player.office"})
-    controller.record_now_playing(controller.now_playing(), playback_active=True)
 
-    # Pause: MA reports the player idle and drops the artist attribute.
+    paused_when_called: list[bool] = []
+    original = hass.services.async_call
+
+    async def _spy(domain, service, data, blocking=True, return_response=False):
+        if service == "media_pause":
+            paused_when_called.append(controller.is_paused)
+        return await original(domain, service, data, blocking, return_response)
+
+    hass.services.async_call = _spy
+
     asyncio.run(controller.async_pause_music())
-    states["media_player.office"].state = "idle"
-    states["media_player.office"].attributes = {ATTR_MEDIA_TITLE: "Song"}
 
-    paused = controller.now_playing()
-    assert (paused.artist, paused.title) == ("Artist", "Song")
+    assert paused_when_called == [True]
 
 
-def test_pause_resume_does_not_duplicate_history() -> None:
-    """Pausing then resuming a playlist track records the play only once (issue #40).
+def test_pause_does_not_duplicate_history_when_idle_event_races() -> None:
+    """The idle event MA emits mid-pause must not re-record the track (issue #40).
 
-    The degraded metadata a paused (idle) player reports must not poison the
-    start-detection lifecycle and re-insert the track on resume.
+    Reproduces the reported bug: pausing a playing playlist added a second copy
+    of the current track to the history (visible in both Now Playing and the
+    history list, persisting after resume).
     """
 
     states = {
@@ -1392,22 +1399,25 @@ def test_pause_resume_does_not_duplicate_history() -> None:
             controller.now_playing(), playback_active=controller.playback_active()
         )
 
-    # Playing.
+    # Track is playing and recorded once.
     refresh()
+    # The sensor refreshes whenever the controller notifies (e.g. the pause flip).
+    controller.async_add_listener(refresh)
 
-    # Pause -> MA reports idle and drops the artist.
+    original = hass.services.async_call
+
+    async def _pause(domain, service, data, blocking=True, return_response=False):
+        # MA applies the pause: the player goes idle (metadata retained) and its
+        # state event fires a sensor refresh while media_pause is still awaited.
+        states["media_player.office"].state = "idle"
+        refresh()
+        return await original(domain, service, data, blocking, return_response)
+
+    hass.services.async_call = _pause
     asyncio.run(controller.async_pause_music())
-    states["media_player.office"].state = "idle"
-    states["media_player.office"].attributes = {ATTR_MEDIA_TITLE: "Song"}
-    refresh()
 
-    # Resume -> metadata returns.
-    asyncio.run(controller.async_resume_music())
+    # Resume: the player plays again and refreshes once more.
     states["media_player.office"].state = "playing"
-    states["media_player.office"].attributes = {
-        ATTR_MEDIA_ARTIST: "Artist",
-        ATTR_MEDIA_TITLE: "Song",
-    }
     refresh()
 
     assert [(t.artist, t.title) for t in controller.play_history] == [
