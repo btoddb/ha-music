@@ -1040,3 +1040,114 @@ def test_playing_kind_change_notifies_listeners() -> None:
     notified.clear()
     asyncio.run(controller.async_stop_music())
     assert notified
+
+
+def test_pause_music_collapses_group_members_onto_group_player() -> None:
+    """Synced members sharing the group's queue are not sent the pause call.
+
+    Music Assistant raises "set_members needs to be implemented" when a
+    transport command hits a synced member, so only the queue-owning group
+    player may be targeted.
+    """
+
+    states = {
+        "media_player.kitchen": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+        "media_player.main_floor": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "group"},
+            state="playing",
+        ),
+        "media_player.office": _FakeState(
+            {"active_queue": "queue_office", "mass_player_type": "player"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "Main Floor": "media_player.main_floor",
+            "Kitchen": "media_player.kitchen",
+            "Office": "media_player.office",
+        },
+    )
+
+    asyncio.run(controller.async_pause_music())
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_pause"
+    # kitchen sorts before main_floor, but the group player still wins its queue
+    assert data["entity_id"] == ["media_player.main_floor", "media_player.office"]
+
+
+def test_resume_music_collapses_members_without_a_group_to_one_target() -> None:
+    """With no group player among the targets, one member per queue is kept."""
+
+    states = {
+        "media_player.a": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="paused",
+        ),
+        "media_player.b": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="paused",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"All": ["media_player.a", "media_player.b"]}
+    )
+
+    asyncio.run(controller.async_resume_music())
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_play"
+    assert data["entity_id"] == ["media_player.a"]
+
+
+def test_pause_music_keeps_players_without_queue_attributes() -> None:
+    """Players missing MA attributes each stay their own target."""
+
+    states = {
+        "media_player.a": _FakeState({}, state="playing"),
+        "media_player.b": _FakeState({}, state="playing"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"All": ["media_player.a", "media_player.b"]}
+    )
+
+    asyncio.run(controller.async_pause_music())
+
+    _domain, _service, data, _blocking, _ret = hass.services.calls[0]
+    assert data["entity_id"] == ["media_player.a", "media_player.b"]
+
+
+def test_pause_music_explicit_target_is_not_collapsed() -> None:
+    """Explicit speaker targets pass through without queue collapsing."""
+
+    states = {
+        "media_player.a": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+        "media_player.b": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"All": ["media_player.a", "media_player.b"]}
+    )
+
+    asyncio.run(
+        controller.async_pause_music(speakers=["media_player.a", "media_player.b"])
+    )
+
+    _domain, _service, data, _blocking, _ret = hass.services.calls[0]
+    assert data["entity_id"] == ["media_player.a", "media_player.b"]

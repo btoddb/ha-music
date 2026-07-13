@@ -27,7 +27,10 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    ATTR_MA_ACTIVE_QUEUE,
+    ATTR_MA_PLAYER_TYPE,
     CONF_LIKE_PLAYLIST_ID,
+    MA_PLAYER_TYPE_GROUP,
     MEDIA_FILTER_ALL,
     MEDIA_FILTER_OPTIONS,
     MEDIA_FILTER_PLAYLISTS,
@@ -303,6 +306,8 @@ class MusicController:
         """
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
+        if speakers is None:
+            entity_ids = self._collapse_queue_targets(entity_ids)
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -322,6 +327,8 @@ class MusicController:
         """
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
+        if speakers is None:
+            entity_ids = self._collapse_queue_targets(entity_ids)
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -378,6 +385,32 @@ class MusicController:
                 raise HomeAssistantError("No speakers are configured")
             return self._filter_active_speakers(all_ids)
         return self._resolve_speakers(speakers)
+
+    def _collapse_queue_targets(self, entity_ids: list[str]) -> list[str]:
+        """Collapse sync-group members onto one target per active queue.
+
+        When a Music Assistant group player is playing, its member players
+        are also "active" and share the group's `active_queue`. Sending
+        pause/play to a synced member makes MA raise ("set_members needs to
+        be implemented when PlayerFeature.SET_MEMBERS is set"), so per queue
+        the command goes to the group player (`mass_player_type: group`) when
+        one is among the targets, otherwise to the first target only.
+        """
+
+        by_queue: dict[str, str] = {}
+        result: list[str] = []
+        for entity_id in entity_ids:
+            state = self.hass.states.get(entity_id)
+            attributes = state.attributes if state is not None else {}
+            queue = attributes.get(ATTR_MA_ACTIVE_QUEUE) or entity_id
+            is_group = attributes.get(ATTR_MA_PLAYER_TYPE) == MA_PLAYER_TYPE_GROUP
+            if queue not in by_queue:
+                by_queue[queue] = entity_id
+                result.append(entity_id)
+            elif is_group:
+                result[result.index(by_queue[queue])] = entity_id
+                by_queue[queue] = entity_id
+        return result
 
     def _filter_active_speakers(self, entity_ids: list[str]) -> list[str]:
         """Return only speakers that are in an active (non-idle/offline) state."""

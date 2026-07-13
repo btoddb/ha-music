@@ -49,6 +49,12 @@ PLATFORMS = (Platform.SELECT, Platform.BUTTON, Platform.SENSOR)
 MUSIC_ASSISTANT_DOMAIN = "music_assistant"
 SERVICE_MA_PLAY_MEDIA = "play_media"
 MA_ENQUEUE_REPLACE = "replace"
+# State attributes the Music Assistant integration puts on its media_players,
+# used to route pause/resume to the queue-owning group player instead of its
+# synced members (which reject transport commands).
+ATTR_MA_ACTIVE_QUEUE = "active_queue"
+ATTR_MA_PLAYER_TYPE = "mass_player_type"
+MA_PLAYER_TYPE_GROUP = "group"
 
 # SpotifyPlus (thlucas1/spotifyplus, a separately installed HACS integration)
 # is the only backend that exposes both a track search and a "Liked Songs"
