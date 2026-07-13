@@ -25,6 +25,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_MA_ACTIVE_QUEUE,
@@ -54,10 +55,13 @@ from .models import (
     MediaItem,
     NamedMapping,
     NowPlaying,
+    PlayedTrack,
     parse_named_mapping,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+PLAY_HISTORY_LIMIT = 10
 
 SelectionListener = Callable[[], None]
 
@@ -102,6 +106,13 @@ class MusicController:
         # via the active-state filter. Cleared by resume, stop, and new
         # playback; not persisted across restarts.
         self._paused_entity_ids: list[str] = []
+        # Recently played tracks, newest first, capped at PLAY_HISTORY_LIMIT.
+        # A track lands here when the now-playing track *changes away* from it
+        # (next track, stop, ...), so the history never duplicates the track
+        # currently shown as Now Playing. In-memory only — not persisted
+        # across restarts.
+        self.play_history: list[PlayedTrack] = []
+        self._last_now_playing: NowPlaying | None = None
         self._listeners: list[SelectionListener] = []
 
     @property
@@ -458,17 +469,66 @@ class MusicController:
 
         return NowPlaying("unknown", None, "unknown", "unknown", None)
 
-    async def async_find_like_matches(self) -> None:
-        """Search Spotify for tracks matching the now-playing artist/title."""
+    @callback
+    def record_now_playing(self, now_playing: NowPlaying | None = None) -> None:
+        """Push the previous track into the play history when the track changes.
+
+        Called by the now-playing sensor whenever it refreshes. The previous
+        track is recorded (newest first, capped at PLAY_HISTORY_LIMIT) only
+        when the artist/title pair actually changed and the previous track was
+        identifiable, so pause/volume state churn and radio streams without
+        metadata add nothing.
+        """
+
+        current = now_playing if now_playing is not None else self.now_playing()
+        previous = self._last_now_playing
+        if previous is not None and (previous.artist, previous.title) == (
+            current.artist,
+            current.title,
+        ):
+            return
+        self._last_now_playing = current
+
+        if (
+            previous is None
+            or previous.artist == "unknown"
+            or previous.title == "unknown"
+        ):
+            return
+        self.play_history.insert(
+            0,
+            PlayedTrack(
+                previous.artist,
+                previous.title,
+                previous.album,
+                dt_util.utcnow().isoformat(),
+            ),
+        )
+        del self.play_history[PLAY_HISTORY_LIMIT:]
+        self._notify_listeners()
+
+    async def async_find_like_matches(
+        self, *, artist: str | None = None, title: str | None = None
+    ) -> None:
+        """Search Spotify for tracks matching an artist/title.
+
+        With no explicit artist/title the now-playing track is used; the card
+        passes both explicitly to like a track from the play history.
+        """
 
         if self.spotify_entity_id is None:
             raise HomeAssistantError("No SpotifyPlus entity is configured")
 
-        now_playing = self.now_playing()
-        if now_playing.artist == "unknown" or now_playing.title == "unknown":
-            raise HomeAssistantError("Nothing identifiable is currently playing")
+        if artist is None and title is None:
+            now_playing = self.now_playing()
+            artist = now_playing.artist
+            title = now_playing.title
+            if artist == "unknown" or title == "unknown":
+                raise HomeAssistantError("Nothing identifiable is currently playing")
+        elif not artist or not title:
+            raise HomeAssistantError("Both artist and title are required")
 
-        query = f"{now_playing.artist} {now_playing.title}"
+        query = f"{artist} {title}"
         response = await self.hass.services.async_call(
             SPOTIFYPLUS_DOMAIN,
             SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,

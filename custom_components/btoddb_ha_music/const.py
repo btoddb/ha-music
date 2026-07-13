@@ -16,10 +16,12 @@ CONF_LIKE_PLAYLIST_ID = "like_playlist_id"
 
 DEFAULT_LIKE_SEARCH_LIMIT = 5
 
+ATTR_ARTIST = "artist"
 ATTR_MEDIA = "media"
 ATTR_PLAYLIST = "playlist"
 ATTR_SPEAKERS = "speakers"
 ATTR_STATION = "station"
+ATTR_TITLE = "title"
 
 MEDIA_FILTER_ALL = "All"
 MEDIA_FILTER_PLAYLISTS = "Playlists"
