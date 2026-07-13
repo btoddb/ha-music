@@ -1259,23 +1259,89 @@ def _now_playing(artist: str, title: str, album: str | None = None) -> NowPlayin
     return NowPlaying(display or "unknown", "media_player.office", artist, title, album)
 
 
-def test_record_now_playing_pushes_previous_track_into_history() -> None:
-    """A track change records the previous track, newest first."""
+def _record(controller, now_playing, *, active: bool = True) -> None:
+    """Record with an explicit playback lifecycle signal (PR #41 review)."""
+
+    controller.record_now_playing(now_playing, playback_active=active)
+
+
+def test_record_now_playing_records_track_when_it_starts() -> None:
+    """A track lands in the history the moment it starts playing (issue #40)."""
 
     controller = _controller()
 
-    controller.record_now_playing(_now_playing("Artist A", "Song A", "Album A"))
-    assert controller.play_history == []
+    _record(controller, _now_playing("Artist A", "Song A", "Album A"))
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist A", "Song A")
+    ]
 
-    controller.record_now_playing(_now_playing("Artist B", "Song B"))
-    controller.record_now_playing(_now_playing("Artist C", "Song C"))
+    _record(controller, _now_playing("Artist B", "Song B"))
+    _record(controller, _now_playing("Artist C", "Song C"))
 
     assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist C", "Song C"),
         ("Artist B", "Song B"),
         ("Artist A", "Song A"),
     ]
-    assert controller.play_history[1].album == "Album A"
+    assert controller.play_history[2].album == "Album A"
     assert controller.play_history[0].played_at  # timestamp is recorded
+
+
+def test_record_now_playing_keeps_track_recorded_after_stop() -> None:
+    """Stopping playback keeps the last track in the history (issue #40)."""
+
+    controller = _controller()
+
+    _record(controller, _now_playing("Artist", "Song"))
+    # A stopped/idle player may retain its metadata (PR #41 review).
+    _record(controller, _now_playing("Artist", "Song"), active=False)
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist", "Song")
+    ]
+
+
+def test_record_now_playing_ignores_retained_metadata_while_inactive() -> None:
+    """An idle player retaining artist/title creates no phantom play (PR #41)."""
+
+    controller = _controller()
+    events: list[str] = []
+    controller.async_add_listener(lambda: events.append("notified"))
+
+    _record(controller, _now_playing("Stale Artist", "Stale Song"), active=False)
+
+    assert controller.play_history == []
+    assert events == []
+
+
+def test_record_now_playing_records_same_song_replayed_after_stop() -> None:
+    """Going inactive resets start detection so a replay records (PR #41)."""
+
+    controller = _controller()
+
+    _record(controller, _now_playing("Artist", "Song"))
+    _record(controller, _now_playing("Artist", "Song"), active=False)
+    _record(controller, _now_playing("Artist", "Song"))
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist", "Song"),
+        ("Artist", "Song"),
+    ]
+
+
+def test_record_now_playing_pause_does_not_reset_or_duplicate() -> None:
+    """An integration pause counts as active, so it neither resets nor re-records."""
+
+    controller = _controller()
+
+    _record(controller, _now_playing("Artist", "Song"))
+    # playback_active() reports True during a controller pause (PM-8).
+    _record(controller, _now_playing("Artist", "Song"), active=True)
+    _record(controller, _now_playing("Artist", "Song"), active=True)
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist", "Song")
+    ]
 
 
 def test_record_now_playing_ignores_unchanged_track() -> None:
@@ -1283,25 +1349,39 @@ def test_record_now_playing_ignores_unchanged_track() -> None:
 
     controller = _controller()
 
-    controller.record_now_playing(_now_playing("Artist", "Song"))
-    controller.record_now_playing(_now_playing("Artist", "Song"))
-    controller.record_now_playing(_now_playing("Artist", "Song", "Album"))
-
-    assert controller.play_history == []
-
-
-def test_record_now_playing_skips_unidentifiable_previous_track() -> None:
-    """A previous track with unknown artist or title is not recorded."""
-
-    controller = _controller()
-
-    controller.record_now_playing(_now_playing("unknown", "unknown"))
-    controller.record_now_playing(_now_playing("Artist", "Song"))
-    controller.record_now_playing(_now_playing("unknown", "unknown"))
+    _record(controller, _now_playing("Artist", "Song"))
+    _record(controller, _now_playing("Artist", "Song"))
+    _record(controller, _now_playing("Artist", "Song"))
 
     assert [(t.artist, t.title) for t in controller.play_history] == [
         ("Artist", "Song")
     ]
+
+
+def test_record_now_playing_refreshes_late_album_metadata() -> None:
+    """Album metadata arriving after the track was recorded updates the entry."""
+
+    controller = _controller()
+
+    _record(controller, _now_playing("Artist", "Song"))
+    assert controller.play_history[0].album is None
+
+    _record(controller, _now_playing("Artist", "Song", "Album"))
+
+    assert len(controller.play_history) == 1
+    assert controller.play_history[0].album == "Album"
+
+
+def test_record_now_playing_skips_unidentifiable_track() -> None:
+    """A track with unknown artist or title is never recorded."""
+
+    controller = _controller()
+
+    _record(controller, _now_playing("unknown", "unknown"))
+    _record(controller, _now_playing("Artist", "unknown"))
+    _record(controller, _now_playing("unknown", "Song"))
+
+    assert controller.play_history == []
 
 
 def test_record_now_playing_caps_history_at_limit() -> None:
@@ -1310,12 +1390,12 @@ def test_record_now_playing_caps_history_at_limit() -> None:
     controller = _controller()
 
     for index in range(PLAY_HISTORY_LIMIT + 3):
-        controller.record_now_playing(_now_playing(f"Artist {index}", f"Song {index}"))
+        _record(controller, _now_playing(f"Artist {index}", f"Song {index}"))
 
     assert len(controller.play_history) == PLAY_HISTORY_LIMIT
-    # Newest first; the current track (last index) is not in history yet.
-    assert controller.play_history[0].title == f"Song {PLAY_HISTORY_LIMIT + 1}"
-    assert controller.play_history[-1].title == "Song 2"
+    # Newest first; the current track is the newest history entry.
+    assert controller.play_history[0].title == f"Song {PLAY_HISTORY_LIMIT + 2}"
+    assert controller.play_history[-1].title == "Song 3"
 
 
 def test_record_now_playing_notifies_listeners_only_on_history_change() -> None:
@@ -1325,14 +1405,17 @@ def test_record_now_playing_notifies_listeners_only_on_history_change() -> None:
     events: list[str] = []
     controller.async_add_listener(lambda: events.append("notified"))
 
-    controller.record_now_playing(_now_playing("Artist A", "Song A"))
+    _record(controller, _now_playing("unknown", "unknown"))
     assert events == []
 
-    controller.record_now_playing(_now_playing("Artist A", "Song A"))
-    assert events == []
-
-    controller.record_now_playing(_now_playing("Artist B", "Song B"))
+    _record(controller, _now_playing("Artist A", "Song A"))
     assert events == ["notified"]
+
+    _record(controller, _now_playing("Artist A", "Song A"))
+    assert events == ["notified"]
+
+    _record(controller, _now_playing("Artist B", "Song B"))
+    assert events == ["notified", "notified"]
 
 
 def test_find_like_matches_with_explicit_artist_and_title() -> None:

@@ -33,10 +33,13 @@ class NowPlayingSensor(MusicEntity, SensorEntity):
         """Read current media metadata once and cache it on the entity."""
 
         now_playing = self._controller.now_playing()
-        self._controller.record_now_playing(now_playing)
+        playback_active = self._controller.playback_active()
+        self._controller.record_now_playing(
+            now_playing, playback_active=playback_active
+        )
         self._attr_native_value = now_playing.state
         self._attr_extra_state_attributes = {
-            "playback_active": self._controller.playback_active(),
+            "playback_active": playback_active,
             "player_entity_id": now_playing.player_entity_id,
             "artist": now_playing.artist,
             "title": now_playing.title,

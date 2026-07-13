@@ -4,15 +4,23 @@ The integration keeps a short history of recently played songs so a user can
 review what played and like a song they missed (issue #27).
 
 - **constraint PH-1** The controller records a play history, newest first,
-  capped at the 10 most recent tracks. A track lands in the history when the
-  now-playing artist/title pair *changes away* from it (next track, stop,
-  switching speaker groups), so the history never duplicates the track
-  currently shown as Now Playing and the last track still lands when playback
-  stops.
+  capped at the 10 most recent tracks. A track lands in the history the
+  moment its artist/title pair *becomes* the now-playing track (issue #40),
+  so the newest entry duplicates the track currently shown as Now Playing
+  while it plays and nothing is lost when playback stops — the card is
+  responsible for not showing the current track twice (CARD-7).
 - **constraint PH-2** State churn that does not change the artist/title pair
-  (pause, volume, album metadata arriving late) records nothing, and a track
-  with an unknown artist or unknown title (e.g. a radio stream without
-  metadata) is never recorded.
+  (pause, volume) records nothing, and a track with an unknown artist or
+  unknown title (e.g. a radio stream without metadata) is never recorded.
+  Album metadata that arrives after the track was recorded refreshes the
+  newest history entry in place.
+- **constraint PH-5** Recording is gated on the `playback_active()`
+  lifecycle: while playback is inactive nothing is recorded — an idle player
+  retaining its last artist/title (integration startup, speaker switch) must
+  not create a phantom play — and a real active→inactive transition resets
+  start detection so replaying the same track after a stop records a new
+  entry. An integration-performed pause counts as active (PM-8), so pausing
+  neither resets nor re-records.
 - **constraint PH-3** The history is exposed as the `history` attribute of
   `sensor.<prefix>_now_playing`: a list of `{artist, title, album,
   played_at}` objects, newest first, where `played_at` is an ISO-8601 UTC

@@ -112,11 +112,97 @@ describe(CARD_TYPE, () => {
     ]);
   });
 
-  it("shows the now-playing artist and title", () => {
+  it("shows the now-playing track as a history-style entry", () => {
     const card = makeCard(makeHass());
     const root = shadow(card);
-    expect(root.querySelector(".artist-value")?.textContent).toBe("Neko Case");
-    expect(root.querySelector(".title-value")?.textContent).toBe("Hold On, Hold On");
+    const entry = root.querySelector(".now-playing-list .history-entry")!;
+    expect(entry.classList.contains("now-playing-entry")).toBe(true);
+    expect(entry.querySelector(".history-artist")?.textContent).toBe("Neko Case");
+    expect(entry.querySelector(".history-song")?.textContent).toBe("Hold On, Hold On");
+  });
+
+  it("empties Now Playing when nothing is playing", () => {
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": { state: "unknown", attributes: {} },
+      })
+    );
+    const root = shadow(card);
+    expect(root.querySelector(".now-playing-list .history-entry")).toBeNull();
+    expect(root.querySelector(".now-playing-list .history-empty")?.textContent).toBe(
+      "Nothing playing"
+    );
+  });
+
+  it("treats retained metadata on an idle player as nothing playing in Now Playing", () => {
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "Neko Case - Hold On, Hold On",
+          attributes: {
+            artist: "Neko Case",
+            title: "Hold On, Hold On",
+            playback_active: false,
+          },
+        },
+      })
+    );
+    const root = shadow(card);
+    expect(root.querySelector(".now-playing-list .history-entry")).toBeNull();
+  });
+
+  it("liking the now-playing entry calls find_like_matches for the current track", async () => {
+    const hass = makeHass();
+    const card = makeCard(hass);
+    const root = shadow(card);
+
+    root.querySelector<HTMLButtonElement>(".now-playing-list .history-like-btn")!.click();
+    await flush();
+
+    expect(hass.calls).toEqual([
+      { domain: "btoddb_ha_music", service: "find_like_matches", data: undefined },
+    ]);
+  });
+
+  it("excludes the currently playing track from the expanded history list", () => {
+    // The integration records a track into history the moment it starts
+    // (issue #40), so the head entry duplicates Now Playing while playing.
+    const history = [
+      { artist: "Neko Case", title: "Hold On, Hold On", album: null, played_at: "2026-07-13T03:00:00" },
+      { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+    ];
+    const playing = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "playing",
+          attributes: { artist: "Neko Case", title: "Hold On, Hold On", history },
+        },
+      })
+    );
+    const playingRoot = shadow(playing);
+    playingRoot.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+    expect(
+      Array.from(playingRoot.querySelectorAll(".history-list .history-artist")).map(
+        (el) => el.textContent
+      )
+    ).toEqual(["Artist A"]);
+
+    // Once playback stops, the full history shows.
+    const stopped = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "unknown",
+          attributes: { playback_active: false, history },
+        },
+      })
+    );
+    const stoppedRoot = shadow(stopped);
+    stoppedRoot.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+    expect(
+      Array.from(stoppedRoot.querySelectorAll(".history-list .history-artist")).map(
+        (el) => el.textContent
+      )
+    ).toEqual(["Neko Case", "Artist A"]);
   });
 
   it("populates the music dropdown from the fallback-resolved media select", () => {
@@ -298,7 +384,7 @@ describe(CARD_TYPE, () => {
     root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
 
     expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(true);
-    expect(root.querySelector<HTMLButtonElement>(".history-like-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".history-list .history-like-btn")!.disabled).toBe(false);
   });
 
   it("disables transport buttons whose backing button entity is unavailable", () => {
@@ -454,7 +540,7 @@ describe(CARD_TYPE, () => {
     const root = shadow(card);
     root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
 
-    const entries = Array.from(root.querySelectorAll(".history-entry"));
+    const entries = Array.from(root.querySelectorAll(".history-list .history-entry"));
     expect(entries.map((li) => li.querySelector(".history-artist")?.textContent)).toEqual([
       "Artist B",
       "Artist A",
@@ -463,15 +549,15 @@ describe(CARD_TYPE, () => {
       "Song B",
       "Song A",
     ]);
-    expect(root.querySelector(".history-empty")).toBeNull();
+    expect(root.querySelector(".history-list .history-empty")).toBeNull();
   });
 
   it("shows an empty-history row when nothing has played yet", () => {
     const card = makeCard(makeHass());
     const root = shadow(card);
     root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
-    expect(root.querySelectorAll(".history-entry").length).toBe(0);
-    expect(root.querySelector(".history-empty")?.textContent).toBe("No songs played yet");
+    expect(root.querySelectorAll(".history-list .history-entry").length).toBe(0);
+    expect(root.querySelector(".history-list .history-empty")?.textContent).toBe("No songs played yet");
   });
 
   it("liking a history entry calls find_like_matches with that artist and title", async () => {
@@ -491,7 +577,7 @@ describe(CARD_TYPE, () => {
     const root = shadow(card);
     root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
 
-    root.querySelector<HTMLButtonElement>(".history-like-btn")!.click();
+    root.querySelector<HTMLButtonElement>(".history-list .history-like-btn")!.click();
     await flush();
 
     expect(hass.calls).toEqual([
@@ -521,7 +607,7 @@ describe(CARD_TYPE, () => {
     const root = shadow(card);
     root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
 
-    expect(root.querySelector<HTMLButtonElement>(".history-like-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".history-list .history-like-btn")!.disabled).toBe(true);
   });
 
   it("prefers a direct prefix match over the fallback scan", () => {
