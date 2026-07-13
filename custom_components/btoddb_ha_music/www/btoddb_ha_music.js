@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.17
-    const CARD_VERSION = "v0.0.17";
+    // v0.0.18
+    const CARD_VERSION = "v0.0.18";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -11,6 +11,8 @@
         _rendered = false;
         _searching = false;
         _skipping = false;
+        _playing = false;
+        _stopping = false;
         _noMatches = false;
         _statusMessage = "";
         _lastPlayingKey = "";
@@ -32,10 +34,36 @@
             }
         }
         getCardSize() {
-            return 4;
+            return 6;
         }
         get _prefix() {
             return this._config.entity_prefix ?? "btoddb_ha_music";
+        }
+        // Entity ids in an existing install can carry different device-name slugs
+        // depending on when each entity was first registered (e.g.
+        // sensor.btoddb_ha_music_now_playing vs select.btoddb_music_music), so a
+        // single configured prefix cannot resolve everything. Try the configured
+        // prefix first, then fall back to any entity in the domain with the same
+        // suffix, preferring ids that share the prefix's leading token.
+        _entity(domain, suffix) {
+            if (!this._hass)
+                return null;
+            const directId = `${domain}.${this._prefix}_${suffix}`;
+            const direct = this._hass.states[directId];
+            if (direct)
+                return { entityId: directId, state: direct };
+            const token = this._prefix.split("_")[0];
+            const matches = Object.keys(this._hass.states)
+                .filter((id) => id.startsWith(`${domain}.`) && id.endsWith(`_${suffix}`))
+                .sort((a, b) => {
+                const aTok = a.startsWith(`${domain}.${token}`) ? 0 : 1;
+                const bTok = b.startsWith(`${domain}.${token}`) ? 0 : 1;
+                return aTok - bTok || a.localeCompare(b);
+            });
+            const entityId = matches[0];
+            if (!entityId)
+                return null;
+            return { entityId, state: this._hass.states[entityId] };
         }
         _initialRender() {
             if (!this._hass)
@@ -44,36 +72,69 @@
             const style = document.createElement("style");
             style.textContent = this._css();
             const card = document.createElement("ha-card");
-            card.setAttribute("header", "Like This Track");
-            // --- Card content ---
+            card.setAttribute("header", "Play Something ...");
             const content = document.createElement("div");
             content.className = "card-content";
-            content.append(this._makeInfoRow("artist-row", "Artist", "artist-value"), this._makeInfoRow("title-row", "Song", "title-value"), this._makeCandidateRow());
-            // --- Card actions ---
-            const actions = document.createElement("div");
-            actions.className = "card-actions";
-            const findRow = document.createElement("div");
-            findRow.className = "find-row";
+            // --- Now Playing ---
+            const nowPlaying = document.createElement("div");
+            nowPlaying.className = "section now-playing-section";
+            nowPlaying.append(this._makeSectionLabel("Now Playing"), this._makeInfoRow("artist-row", "Artist", "artist-value"), this._makeInfoRow("title-row", "Song", "title-value"));
+            // --- Music source selector ---
+            const mediaSection = document.createElement("div");
+            mediaSection.className = "section media-section";
+            const mediaSelect = this._makeDropdown("media-select");
+            mediaSelect.addEventListener("change", () => this._onDropdownChange("select", "music", mediaSelect.value));
+            mediaSection.append(this._makeSectionLabel("Music"), mediaSelect);
+            // --- Play / Skip ---
+            const playRow = document.createElement("div");
+            playRow.className = "section btn-row play-row";
+            const playBtn = this._makeButton("play-btn", "Play");
+            playBtn.addEventListener("click", () => this._onPlay());
+            const skipBtn = this._makeButton("skip-btn", "Skip");
+            skipBtn.addEventListener("click", () => this._onSkip());
+            playRow.append(playBtn, skipBtn);
+            // --- Stop / Find Song ---
+            const stopRow = document.createElement("div");
+            stopRow.className = "section btn-row stop-row";
+            const stopBtn = this._makeButton("stop-btn", "Stop");
+            stopBtn.addEventListener("click", () => this._onStop());
             const findBtn = this._makeButton("find-btn", "Find Song");
             findBtn.addEventListener("click", () => this._onFind());
-            const skipBtn = this._makeButton("skip-btn", "Skip Song");
-            skipBtn.addEventListener("click", () => this._onSkip());
-            findRow.append(findBtn, skipBtn);
+            stopRow.append(stopBtn, findBtn);
             const findStatus = document.createElement("div");
             findStatus.className = "find-status hidden";
             findStatus.setAttribute("role", "status");
-            const actionRow = document.createElement("div");
-            actionRow.className = "action-row";
+            // --- Like flow (appears after Find Song returns matches) ---
+            const likeSection = document.createElement("div");
+            likeSection.className = "section like-section hidden";
+            const candidateList = document.createElement("ul");
+            candidateList.className = "candidate-list";
+            candidateList.setAttribute("role", "listbox");
+            const likeRow = document.createElement("div");
+            likeRow.className = "btn-row like-row";
             const likeBtn = this._makeButton("like-btn", "Like");
             likeBtn.addEventListener("click", () => this._callService("confirm_like"));
             const cancelBtn = this._makeButton("cancel-btn", "Cancel");
             cancelBtn.addEventListener("click", () => this._callService("cancel_like"));
-            actionRow.append(likeBtn, cancelBtn);
-            actions.append(findRow, findStatus, actionRow);
-            card.append(content, actions);
+            likeRow.append(likeBtn, cancelBtn);
+            likeSection.append(this._makeSectionLabel("Match"), candidateList, likeRow);
+            // --- Speakers selector ---
+            const speakersSection = document.createElement("div");
+            speakersSection.className = "section speakers-section";
+            const speakersSelect = this._makeDropdown("speakers-select");
+            speakersSelect.addEventListener("change", () => this._onDropdownChange("select", "speaker_group", speakersSelect.value));
+            speakersSection.append(this._makeSectionLabel("Speakers"), speakersSelect);
+            content.append(nowPlaying, mediaSection, playRow, stopRow, findStatus, likeSection, speakersSection);
+            card.append(content);
             shadow.append(style, card);
             this._rendered = true;
             this._update();
+        }
+        _makeSectionLabel(text) {
+            const label = document.createElement("div");
+            label.className = "section-label";
+            label.textContent = text;
+            return label;
         }
         _makeInfoRow(rowClass, labelText, valueClass) {
             const row = document.createElement("div");
@@ -87,17 +148,10 @@
             row.append(label, value);
             return row;
         }
-        _makeCandidateRow() {
-            const row = document.createElement("div");
-            row.className = "candidate-row hidden";
-            const label = document.createElement("div");
-            label.className = "label candidate-label";
-            label.textContent = "Match";
-            const list = document.createElement("ul");
-            list.className = "candidate-list";
-            list.setAttribute("role", "listbox");
-            row.append(label, list);
-            return row;
+        _makeDropdown(className) {
+            const select = document.createElement("select");
+            select.className = `dropdown ${className}`;
+            return select;
         }
         _makeButton(className, label) {
             const btn = document.createElement("button");
@@ -108,26 +162,30 @@
         _update() {
             if (!this._rendered || !this._hass || !this.shadowRoot)
                 return;
-            const nowPlaying = this._hass.states[`sensor.${this._prefix}_now_playing`];
+            const nowPlaying = this._entity("sensor", "now_playing")?.state;
             const playingKey = `${nowPlaying?.attributes?.artist ?? ""}|${nowPlaying?.attributes?.title ?? ""}`;
             if (playingKey !== this._lastPlayingKey) {
                 this._lastPlayingKey = playingKey;
                 this._noMatches = false;
                 this._statusMessage = "";
             }
-            const likeCandidate = this._hass.states[`select.${this._prefix}_like_candidate`];
-            const confirmState = this._hass.states[`button.${this._prefix}_confirm_like`];
-            const cancelState = this._hass.states[`button.${this._prefix}_cancel_like`];
-            // Artist / Song
+            // Now Playing
             const artistEl = this.shadowRoot.querySelector(".artist-value");
             if (artistEl)
                 artistEl.textContent = String(nowPlaying?.attributes?.artist ?? "—");
             const titleEl = this.shadowRoot.querySelector(".title-value");
             if (titleEl)
                 titleEl.textContent = String(nowPlaying?.attributes?.title ?? "—");
-            // Candidate listbox
-            const candidateRow = this.shadowRoot.querySelector(".candidate-row");
-            const candidateList = this.shadowRoot.querySelector(".candidate-list");
+            // Selectors
+            this._updateDropdown(".media-select", this._entity("select", "music"));
+            this._updateDropdown(".speakers-select", this._entity("select", "speaker_group"));
+            // Transport buttons — availability mirrors the integration's button
+            // entities, layered with this card's own in-flight state.
+            this._updateActionButton(".play-btn", ["play_music"], this._playing, "Play", "Playing…");
+            this._updateActionButton(".skip-btn", ["skip_song", "next_track"], this._skipping, "Skip", "Skipping…");
+            this._updateActionButton(".stop-btn", ["stop_music"], this._stopping, "Stop", "Stop");
+            // Like candidates
+            const likeCandidate = this._entity("select", "like_candidate")?.state;
             const currentOption = likeCandidate?.state;
             const structuredCandidates = likeCandidate?.attributes?.candidates ?? [];
             const fallbackOptions = likeCandidate?.attributes?.options ?? [];
@@ -135,8 +193,10 @@
                 ? structuredCandidates
                 : fallbackOptions.map((opt) => ({ label: opt, artist: opt, title: "", album: null }));
             const hasCandidates = candidates.length > 0;
-            if (candidateRow)
-                candidateRow.classList.toggle("hidden", !hasCandidates);
+            const likeSection = this.shadowRoot.querySelector(".like-section");
+            if (likeSection)
+                likeSection.classList.toggle("hidden", !hasCandidates);
+            const candidateList = this.shadowRoot.querySelector(".candidate-list");
             if (candidateList && hasCandidates) {
                 const existingLabels = Array.from(candidateList.querySelectorAll(".candidate-option")).map((li) => li.dataset.value ?? "");
                 const newLabels = candidates.map((c) => c.label);
@@ -169,13 +229,13 @@
                     li.setAttribute("aria-selected", String(selected));
                 });
             }
-            // Find button state: hide once we have matches, otherwise reflect the
-            // in-flight search / no-results feedback.
+            // Find button + no-match feedback
             const findBtn = this.shadowRoot.querySelector(".find-btn");
             const findStatus = this.shadowRoot.querySelector(".find-status");
             if (findBtn) {
-                findBtn.classList.toggle("hidden", hasCandidates);
-                findBtn.disabled = this._searching;
+                const findState = this._entity("button", "find_like_matches")?.state.state;
+                findBtn.disabled =
+                    this._searching || findState === "unavailable" || findState === undefined;
                 findBtn.textContent = this._searching ? "Searching…" : "Find Song";
             }
             if (findStatus) {
@@ -184,27 +244,98 @@
                 if (showNoMatches)
                     findStatus.textContent = this._statusMessage;
             }
-            // Skip button state (always available, shows transient "Skipping…" text)
-            const skipBtn = this.shadowRoot.querySelector(".skip-btn");
-            if (skipBtn) {
-                skipBtn.disabled = this._skipping;
-                skipBtn.textContent = this._skipping ? "Skipping…" : "Skip Song";
-            }
-            // Button availability
+            // Like / Cancel availability
             const likeBtn = this.shadowRoot.querySelector(".like-btn");
             const cancelBtn = this.shadowRoot.querySelector(".cancel-btn");
             if (likeBtn)
-                likeBtn.disabled = confirmState?.state === "unavailable";
+                likeBtn.disabled = this._entity("button", "confirm_like")?.state.state === "unavailable";
             if (cancelBtn)
-                cancelBtn.disabled = cancelState?.state === "unavailable";
+                cancelBtn.disabled = this._entity("button", "cancel_like")?.state.state === "unavailable";
+        }
+        _updateDropdown(selector, resolved) {
+            if (!this.shadowRoot)
+                return;
+            const dropdown = this.shadowRoot.querySelector(selector);
+            if (!dropdown)
+                return;
+            const options = resolved?.state.attributes?.options ?? [];
+            dropdown.disabled = options.length === 0;
+            const existing = Array.from(dropdown.options).map((o) => o.value);
+            if (existing.join("\0") !== options.join("\0")) {
+                dropdown.innerHTML = "";
+                for (const option of options) {
+                    const el = document.createElement("option");
+                    el.value = option;
+                    el.textContent = option;
+                    dropdown.append(el);
+                }
+            }
+            const current = resolved?.state.state;
+            if (current && options.includes(current)) {
+                dropdown.value = current;
+            }
+            else {
+                dropdown.selectedIndex = -1;
+            }
+        }
+        _updateActionButton(selector, buttonSuffixes, inFlight, label, inFlightLabel) {
+            if (!this.shadowRoot)
+                return;
+            const btn = this.shadowRoot.querySelector(selector);
+            if (!btn)
+                return;
+            const backing = buttonSuffixes
+                .map((suffix) => this._entity("button", suffix)?.state.state)
+                .find((state) => state !== undefined);
+            btn.disabled = inFlight || backing === "unavailable" || backing === undefined;
+            btn.textContent = inFlight ? inFlightLabel : label;
+        }
+        _onDropdownChange(domain, suffix, option) {
+            if (!this._hass || !option)
+                return;
+            const resolved = this._entity(domain, suffix);
+            if (!resolved)
+                return;
+            this._hass.callService("select", "select_option", {
+                entity_id: resolved.entityId,
+                option,
+            });
         }
         _onCandidateSelect(label) {
             if (!this._hass)
                 return;
+            const resolved = this._entity("select", "like_candidate");
+            if (!resolved)
+                return;
             this._hass.callService("select", "select_option", {
-                entity_id: `select.${this._prefix}_like_candidate`,
+                entity_id: resolved.entityId,
                 option: label,
             });
+        }
+        async _onPlay() {
+            await this._runTransient("play_music", (v) => (this._playing = v), () => this._playing);
+        }
+        async _onStop() {
+            await this._runTransient("stop_music", (v) => (this._stopping = v), () => this._stopping);
+        }
+        async _onSkip() {
+            await this._runTransient("next_track", (v) => (this._skipping = v), () => this._skipping);
+        }
+        async _runTransient(service, setFlag, getFlag) {
+            if (!this._hass || getFlag())
+                return;
+            setFlag(true);
+            this._update();
+            try {
+                await this._callService(service);
+            }
+            catch (err) {
+                console.warn(`[btoddb-ha-music] ${service} failed:`, err);
+            }
+            finally {
+                setFlag(false);
+                this._update();
+            }
         }
         async _onFind() {
             if (!this._hass || this._searching)
@@ -225,22 +356,6 @@
                 this._update();
             }
         }
-        async _onSkip() {
-            if (!this._hass || this._skipping)
-                return;
-            this._skipping = true;
-            this._update();
-            try {
-                await this._callService("next_track");
-            }
-            catch (err) {
-                console.warn("[btoddb-ha-music] next_track failed:", err);
-            }
-            finally {
-                this._skipping = false;
-                this._update();
-            }
-        }
         async _callService(service) {
             if (!this._hass)
                 return;
@@ -252,13 +367,27 @@
         display: block;
       }
       .card-content {
-        padding: 16px 16px 8px;
+        padding: 0 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .section {
+        width: 100%;
+      }
+      .section-label {
+        font-size: 0.8em;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--secondary-text-color);
+        margin-bottom: 4px;
       }
       .info-row {
         display: flex;
         align-items: baseline;
         gap: 8px;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         width: 100%;
       }
       .label {
@@ -281,23 +410,71 @@
       .artist-value {
         font-weight: 600;
       }
-      .candidate-row {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin-top: 12px;
+      .dropdown {
         width: 100%;
+        min-height: 40px;
+        padding: 0 8px;
+        font-family: inherit;
+        font-size: 0.95em;
+        color: var(--primary-text-color);
+        background: var(--card-background-color, #fff);
+        border: 1px solid var(--divider-color, #e0e0e0);
+        border-radius: 6px;
+        cursor: pointer;
       }
-      .candidate-row.hidden {
+      .dropdown:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-row {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-row .ha-btn {
+        flex: 1;
+      }
+      .ha-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 16px;
+        border: none;
+        border-radius: 4px;
+        font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+        font-size: 0.875rem;
+        font-weight: 500;
+        letter-spacing: 0.08929em;
+        text-transform: uppercase;
+        cursor: pointer;
+        background-color: var(--primary-color, #03a9f4);
+        color: var(--text-primary-color, #fff);
+        box-shadow: 0 3px 1px -2px rgba(0,0,0,.2), 0 2px 2px 0 rgba(0,0,0,.14), 0 1px 5px 0 rgba(0,0,0,.12);
+        transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+        outline: none;
+      }
+      .ha-btn:hover:not(:disabled) {
+        box-shadow: 0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px 0 rgba(0,0,0,.14), 0 1px 10px 0 rgba(0,0,0,.12);
+      }
+      .ha-btn:disabled {
+        background-color: rgba(0,0,0,.12);
+        color: rgba(0,0,0,.37);
+        box-shadow: none;
+        cursor: not-allowed;
+      }
+      .find-status {
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
+        text-align: center;
+      }
+      .find-status.hidden,
+      .like-section.hidden {
         display: none;
-      }
-      .candidate-label {
-        min-width: unset;
       }
       .candidate-list {
         list-style: none;
         padding: 0;
-        margin: 0;
+        margin: 0 0 8px;
         border: 1px solid var(--divider-color, #e0e0e0);
         border-radius: 6px;
         max-height: 260px;
@@ -334,66 +511,6 @@
         color: var(--secondary-text-color);
         font-style: italic;
       }
-      .card-actions {
-        padding: 8px 16px 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .action-row {
-        display: flex;
-        gap: 8px;
-      }
-      .ha-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 36px;
-        padding: 0 16px;
-        border: none;
-        border-radius: 4px;
-        font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
-        font-size: 0.875rem;
-        font-weight: 500;
-        letter-spacing: 0.08929em;
-        text-transform: uppercase;
-        cursor: pointer;
-        background-color: var(--primary-color, #03a9f4);
-        color: var(--text-primary-color, #fff);
-        box-shadow: 0 3px 1px -2px rgba(0,0,0,.2), 0 2px 2px 0 rgba(0,0,0,.14), 0 1px 5px 0 rgba(0,0,0,.12);
-        transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
-        outline: none;
-      }
-      .ha-btn:hover:not(:disabled) {
-        box-shadow: 0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px 0 rgba(0,0,0,.14), 0 1px 10px 0 rgba(0,0,0,.12);
-      }
-      .ha-btn:disabled {
-        background-color: rgba(0,0,0,.12);
-        color: rgba(0,0,0,.37);
-        box-shadow: none;
-        cursor: not-allowed;
-      }
-      .find-row {
-        display: flex;
-        gap: 8px;
-      }
-      .find-row .ha-btn {
-        flex: 1;
-      }
-      .find-btn.hidden {
-        display: none;
-      }
-      .find-status {
-        font-size: 0.85em;
-        color: var(--secondary-text-color);
-        text-align: center;
-      }
-      .find-status.hidden {
-        display: none;
-      }
-      .action-row .ha-btn {
-        flex: 1;
-      }
     `;
         }
     }
@@ -403,7 +520,7 @@
         (window["customCards"]).push({
             type: CARD_TYPE,
             name: "HA Music — Like Card",
-            description: "Displays the currently playing track and lets you like it on Spotify.",
+            description: "Now playing, music source and speaker selection, playback controls, and Spotify likes.",
         });
     }
 
