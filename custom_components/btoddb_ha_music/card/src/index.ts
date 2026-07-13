@@ -300,15 +300,21 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
 
     // Transport buttons — availability mirrors the integration's button
     // entities, layered with this card's own in-flight state and the
-    // now-playing sensor (issue #36): Play grays while a track is playing,
-    // and the play-dependent buttons gray when nothing is. The sensor (not
-    // the backing entities) carries the "is anything playing" signal because
-    // it reflects the real player state, so the graying self-heals when a
-    // playlist queue finishes on its own or HA restarts mid-playback.
+    // now-playing sensor (issue #36): Play grays while something is playing,
+    // and the play-dependent buttons gray when nothing is. The sensor's
+    // playback_active attribute carries the "is anything playing" signal —
+    // it derives from real player states (with the integration's paused
+    // players counting as active), not from the sensor's state string, which
+    // is built from media metadata an idle player can retain after its queue
+    // finishes. Older integrations without the attribute fall back to the
+    // state string.
+    const playbackActive = nowPlaying?.attributes?.playback_active;
     const nothingPlaying =
-      nowPlaying === undefined ||
-      nowPlaying.state === "unknown" ||
-      nowPlaying.state === "unavailable";
+      playbackActive === undefined
+        ? nowPlaying === undefined ||
+          nowPlaying.state === "unknown" ||
+          nowPlaying.state === "unavailable"
+        : !playbackActive;
     this._updateActionButton(
       ".play-btn",
       ["play_music"],

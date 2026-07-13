@@ -235,6 +235,50 @@ describe(CARD_TYPE, () => {
     expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(false);
   });
 
+  it("treats retained metadata on an idle player as nothing playing", () => {
+    // After a queue finishes, an idle player can keep its last artist/title,
+    // so the sensor state still names a track. The playback_active attribute
+    // carries the real signal (PR #38 review).
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "Neko Case - Hold On, Hold On",
+          attributes: {
+            artist: "Neko Case",
+            title: "Hold On, Hold On",
+            playback_active: false,
+          },
+        },
+      })
+    );
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".play-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".skip-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".stop-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".pause-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".resume-btn")!.disabled).toBe(true);
+  });
+
+  it("honors playback_active=true even when the sensor state carries no track", () => {
+    // Music Assistant reports paused players as idle; the integration counts
+    // its own pause as active so Resume stays applicable.
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "unknown",
+          attributes: { playback_active: true },
+        },
+      })
+    );
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".play-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".stop-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".resume-btn")!.disabled).toBe(false);
+  });
+
   it("keeps history like buttons usable when nothing is playing", () => {
     // History entries carry their own artist/title, so liking a song that
     // already stopped playing must keep working (issue #27).

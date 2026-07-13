@@ -25,13 +25,17 @@ selection.
   each is disabled while its call is in flight or when its backing button
   entity is missing or unavailable. Skip accepts either the `_skip_song` or
   legacy `_next_track` button entity id. The card additionally grays the
-  buttons that are not applicable (issue #36): Play while the now-playing
-  sensor reports a track, and Skip/Stop while it reports nothing (state
-  missing, `unknown`, or `unavailable`). The sensor — not the integration's
-  `playing_kind` — carries this signal because it reflects real player
-  state, so the graying self-heals when a playlist queue finishes on its own
-  or HA restarts mid-playback. Skip's playlist-only availability comes from
-  the backing entity (PM-8).
+  buttons that are not applicable (issue #36): Play while something is
+  playing, and Skip/Stop while nothing is. The signal is the now-playing
+  sensor's `playback_active` attribute, which the integration derives from
+  the configured players' actual states (with its own remembered pause
+  counting as active — PM-8) rather than from the sensor's metadata-built
+  state string, because an idle player can retain its last artist/title
+  after a queue finishes. It therefore self-heals when a playlist queue
+  finishes on its own or HA restarts mid-playback. When the attribute is
+  absent (older integration), the card falls back to treating a missing,
+  `unknown`, or `unavailable` sensor state as nothing playing. Skip's
+  playlist-only availability comes from the backing entity (PM-8).
 - **constraint CARD-4** The music and speakers dropdowns list the backing
   select's `options`, reflect its current state, and call
   `select.select_option` against the resolved entity id on change. A dropdown
@@ -42,17 +46,17 @@ selection.
   `options`), clicking a candidate selects it, and Like/Cancel call
   `confirm_like`/`cancel_like` with availability mirroring the backing button
   entities. Find Song (which searches for the now-playing track) is
-  additionally grayed while the now-playing sensor reports nothing
-  (issue #36).
+  additionally grayed while nothing is playing (the CARD-3 `playback_active`
+  signal, issue #36).
 - **constraint CARD-6** Pause and Resume call the `btoddb_ha_music.pause_music`
   and `resume_music` services (issue #26). Each is disabled while its call is
   in flight, when its backing button entity is missing or unavailable (the
   integration marks both unavailable unless a playlist is the active media
   kind, and of the pair only the one matching the paused state stays
-  available — see PM-7/PM-8), or when the now-playing sensor's state is
-  missing, `unknown`, or `unavailable` (covers a playlist queue that finished
-  on its own), so both gray out while a radio station or nothing is playing
-  and they never present as clickable together.
+  available — see PM-7/PM-8), or while nothing is playing per the CARD-3
+  `playback_active` signal (covers a playlist queue that finished on its
+  own), so both gray out while a radio station or nothing is playing and
+  they never present as clickable together.
 - **constraint CARD-7** The Now Playing section also renders a "History"
   title (always visible) with a chevron that expands/hides the history list
   (issue #27, collapsed by default). The list renders the now-playing

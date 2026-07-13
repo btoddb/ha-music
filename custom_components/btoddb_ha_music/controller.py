@@ -467,6 +467,23 @@ class MusicController:
                 active.append(entity_id)
         return active
 
+    def playback_active(self) -> bool:
+        """Return whether any configured speaker is actively playing.
+
+        This is the "is anything playing" signal for button applicability
+        (issue #36): it derives from the players' actual states, not from
+        retained media metadata, because an idle player can keep its last
+        artist/title after a queue finishes. Music Assistant reports paused
+        players as "idle", so a pause this controller performed counts as
+        active — Resume must stay applicable.
+        """
+
+        if self.is_paused:
+            return True
+        return bool(
+            self._filter_active_speakers(sorted(self.all_media_player_entity_ids))
+        )
+
     def now_playing(self) -> NowPlaying:
         """Return current media metadata for the selected speaker option."""
 

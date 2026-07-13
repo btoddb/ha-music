@@ -56,5 +56,10 @@ backward compatibility.
   `button.<prefix>_play_music` and `button.<prefix>_stop_music` availability
   is deliberately unchanged (configured speakers/media only): `playing_kind`
   can go stale when a queue finishes on its own or HA restarts, and keying
-  Play/Stop off it could permanently gray them; the card grays those from the
-  live now-playing sensor instead (CARD-3).
+  Play/Stop off it could permanently gray them; the card grays those from
+  live state instead (CARD-3). For that, the controller exposes
+  `playback_active` — true while any configured speaker is in an active
+  player state or while `is_paused` holds (MA reports paused players as
+  `idle`) — published as the now-playing sensor's `playback_active`
+  attribute. It deliberately ignores media metadata, which an idle player
+  can retain after its queue finishes.
