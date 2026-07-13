@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.18
-    const CARD_VERSION = "v0.0.18";
+    // v0.0.19
+    const CARD_VERSION = "v0.0.19";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -124,7 +124,7 @@
             const speakersSelect = this._makeDropdown("speakers-select");
             speakersSelect.addEventListener("change", () => this._onDropdownChange("select", "speaker_group", speakersSelect.value));
             speakersSection.append(this._makeSectionLabel("Speakers"), speakersSelect);
-            content.append(nowPlaying, mediaSection, playRow, stopRow, findStatus, likeSection, speakersSection);
+            content.append(nowPlaying, mediaSection, speakersSection, playRow, stopRow, findStatus, likeSection);
             card.append(content);
             shadow.append(style, card);
             this._rendered = true;
