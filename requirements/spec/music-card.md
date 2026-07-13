@@ -7,7 +7,11 @@ selection.
 
 - **constraint CARD-1** The card renders, in order: a "Play Something ..."
   header; a Now Playing section (artist and song from
-  `sensor.<prefix>_now_playing`); a music-source dropdown backed by the
+  `sensor.<prefix>_now_playing`, rendered as a single history-style entry in
+  the same outlined list style as the history entries, with a ♥ button that
+  runs the now-playing like flow — issue #40; an italic "Nothing playing"
+  row when nothing is playing per the CARD-3 signal); a music-source dropdown
+  backed by the
   combined media select; a speakers dropdown backed by the speaker-group
   select; a Play/Skip button row; a Stop/Find Song button row; a Pause/Resume
   button row; and the like-candidate flow (hidden until Find Song returns
@@ -60,10 +64,14 @@ selection.
 - **constraint CARD-7** The Now Playing section also renders a "History"
   title (always visible) with a chevron that expands/hides the history list
   (issue #27, collapsed by default). The list renders the now-playing
-  sensor's `history` attribute as-is (newest first, capped at 10 by the
-  integration — see PH-1/PH-3), showing artist and song per entry plus a
-  like (♥) button that calls `find_like_matches` with that entry's `artist`
-  and `title`, feeding the existing like-candidate flow (CARD-5). The like
+  sensor's `history` attribute (newest first, capped at 10 by the
+  integration — see PH-1/PH-3), excluding the newest entry matching the
+  currently playing artist/title while something is playing (the integration
+  records a track at play start, so that entry duplicates Now Playing —
+  issue #40) and showing the full history when nothing is playing. Each
+  entry shows artist and song plus a like (♥) button that calls
+  `find_like_matches` with that entry's `artist` and `title`, feeding the
+  existing like-candidate flow (CARD-5). The like
   buttons mirror the backing `find_like_matches` button entity's availability
   and the card's in-flight state — but not Find Song's nothing-playing
   graying (CARD-5), because history entries carry their own artist/title and

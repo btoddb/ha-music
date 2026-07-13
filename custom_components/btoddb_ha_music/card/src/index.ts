@@ -143,12 +143,17 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     });
 
     const historyList = document.createElement("ul");
-    historyList.className = "history-list hidden";
+    historyList.className = "track-list history-list hidden";
+
+    // Now Playing renders as a single history-style entry (same outline as
+    // the history list) so the currently playing track and the history read
+    // as one timeline (issue #40).
+    const nowPlayingList = document.createElement("ul");
+    nowPlayingList.className = "track-list now-playing-list";
 
     nowPlaying.append(
       this._makeSectionLabel("Now Playing"),
-      this._makeInfoRow("artist-row", "Artist", "artist-value"),
-      this._makeInfoRow("title-row", "Song", "title-value"),
+      nowPlayingList,
       historyToggle,
       historyList
     );
@@ -242,19 +247,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     return label;
   }
 
-  private _makeInfoRow(rowClass: string, labelText: string, valueClass: string): HTMLElement {
-    const row = document.createElement("div");
-    row.className = `info-row ${rowClass}`;
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = labelText;
-    const value = document.createElement("span");
-    value.className = `value ${valueClass}`;
-    value.textContent = "—";
-    row.append(label, value);
-    return row;
-  }
-
   private _makeDropdown(className: string): HTMLSelectElement {
     const select = document.createElement("select");
     select.className = `dropdown ${className}`;
@@ -280,19 +272,48 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       this._statusMessage = "";
     }
 
-    // Now Playing
-    const artistEl = this.shadowRoot.querySelector(".artist-value");
-    if (artistEl)
-      artistEl.textContent = String(nowPlaying?.attributes?.artist ?? "—");
+    // "Is anything playing" signal — see the transport-button comment below
+    // for why playback_active is preferred over the sensor state string.
+    const playbackActive = nowPlaying?.attributes?.playback_active;
+    const nothingPlaying =
+      playbackActive === undefined
+        ? nowPlaying === undefined ||
+          nowPlaying.state === "unknown" ||
+          nowPlaying.state === "unavailable"
+        : !playbackActive;
 
-    const titleEl = this.shadowRoot.querySelector(".title-value");
-    if (titleEl)
-      titleEl.textContent = String(nowPlaying?.attributes?.title ?? "—");
+    // Now Playing renders as a history-style entry the moment a track starts
+    // (issue #40); the integration puts that same track at the head of the
+    // history, so the expanded list drops its newest matching entry to avoid
+    // showing the current track twice. When nothing is playing the entry
+    // empties and the full history shows.
+    const known = (value: unknown): value is string =>
+      typeof value === "string" && value !== "" && value !== "unknown";
+    const artist = nowPlaying?.attributes?.artist;
+    const title = nowPlaying?.attributes?.title;
+    const currentTrack =
+      !nothingPlaying && (known(artist) || known(title))
+        ? {
+            artist: known(artist) ? artist : "unknown",
+            title: known(title) ? title : "unknown",
+          }
+        : null;
+    this._updateNowPlayingEntry(currentTrack);
 
     // History (from the now-playing sensor's history attribute, newest first)
-    this._updateHistory(
-      (nowPlaying?.attributes?.history as PlayedTrack[] | undefined) ?? []
-    );
+    const history =
+      (nowPlaying?.attributes?.history as PlayedTrack[] | undefined) ?? [];
+    let visibleHistory = history;
+    if (currentTrack) {
+      const currentIdx = history.findIndex(
+        (t) => t.artist === currentTrack.artist && t.title === currentTrack.title
+      );
+      if (currentIdx !== -1)
+        visibleHistory = history
+          .slice(0, currentIdx)
+          .concat(history.slice(currentIdx + 1));
+    }
+    this._updateHistory(visibleHistory);
 
     // Selectors
     this._updateDropdown(".media-select", this._entity("select", "music"));
@@ -307,14 +328,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     // players counting as active), not from the sensor's state string, which
     // is built from media metadata an idle player can retain after its queue
     // finishes. Older integrations without the attribute fall back to the
-    // state string.
-    const playbackActive = nowPlaying?.attributes?.playback_active;
-    const nothingPlaying =
-      playbackActive === undefined
-        ? nowPlaying === undefined ||
-          nowPlaying.state === "unknown" ||
-          nowPlaying.state === "unavailable"
-        : !playbackActive;
+    // state string. (Computed above, before the Now Playing entry.)
     this._updateActionButton(
       ".play-btn",
       ["play_music"],
@@ -452,6 +466,68 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       cancelBtn.disabled = this._entity("button", "cancel_like")?.state.state === "unavailable";
   }
 
+  // Build one history-style row (artist + song stacked, ♥ like button) —
+  // shared by the Now Playing entry and the history list so they render
+  // identically (issue #40).
+  private _makeTrackEntry(artist: string, title: string, onLike: () => void): HTMLLIElement {
+    const li = document.createElement("li");
+    li.className = "history-entry";
+
+    const text = document.createElement("div");
+    text.className = "history-text";
+    const artistSpan = document.createElement("span");
+    artistSpan.className = "history-artist";
+    artistSpan.textContent = artist;
+    const songSpan = document.createElement("span");
+    songSpan.className = "history-song";
+    songSpan.textContent = title;
+    text.append(artistSpan, songSpan);
+
+    const likeBtn = document.createElement("button");
+    likeBtn.className = "history-like-btn";
+    likeBtn.textContent = "♥";
+    likeBtn.title = "Like this song";
+    likeBtn.setAttribute("aria-label", `Like ${artist} - ${title}`);
+    likeBtn.addEventListener("click", onLike);
+
+    li.append(text, likeBtn);
+    return li;
+  }
+
+  // The hearts go through find_like_matches, so they mirror the backing
+  // button entity's availability and the card's in-flight state — but not
+  // the Find Song button's nothing-playing graying, since these entries
+  // carry their own artist/title.
+  private _likeDisabled(): boolean {
+    const findState = this._entity("button", "find_like_matches")?.state.state;
+    return this._searching || findState === "unavailable" || findState === undefined;
+  }
+
+  private _updateNowPlayingEntry(track: { artist: string; title: string } | null): void {
+    if (!this.shadowRoot) return;
+    const list = this.shadowRoot.querySelector<HTMLUListElement>(".now-playing-list");
+    if (!list) return;
+
+    const key = track ? `${track.artist}|${track.title}` : "";
+    if (list.dataset.key !== key) {
+      list.dataset.key = key;
+      list.innerHTML = "";
+      if (track) {
+        const li = this._makeTrackEntry(track.artist, track.title, () => this._onFind());
+        li.classList.add("now-playing-entry");
+        list.append(li);
+      } else {
+        const empty = document.createElement("li");
+        empty.className = "history-empty";
+        empty.textContent = "Nothing playing";
+        list.append(empty);
+      }
+    }
+
+    const likeBtn = list.querySelector<HTMLButtonElement>(".history-like-btn");
+    if (likeBtn) likeBtn.disabled = this._likeDisabled();
+  }
+
   private _updateHistory(history: PlayedTrack[]): void {
     if (!this.shadowRoot) return;
 
@@ -484,41 +560,15 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         list.append(empty);
       }
       for (const track of history) {
-        const li = document.createElement("li");
-        li.className = "history-entry";
-        li.dataset.key = key(track);
-
-        const text = document.createElement("div");
-        text.className = "history-text";
-        const artistSpan = document.createElement("span");
-        artistSpan.className = "history-artist";
-        artistSpan.textContent = track.artist;
-        const songSpan = document.createElement("span");
-        songSpan.className = "history-song";
-        songSpan.textContent = track.title;
-        text.append(artistSpan, songSpan);
-
-        const likeBtn = document.createElement("button");
-        likeBtn.className = "history-like-btn";
-        likeBtn.textContent = "♥";
-        likeBtn.title = "Like this song";
-        likeBtn.setAttribute("aria-label", `Like ${track.artist} - ${track.title}`);
-        likeBtn.addEventListener("click", () =>
+        const li = this._makeTrackEntry(track.artist, track.title, () =>
           this._onFind({ artist: track.artist, title: track.title })
         );
-
-        li.append(text, likeBtn);
+        li.dataset.key = key(track);
         list.append(li);
       }
     }
 
-    // Liking from history goes through find_like_matches, so the hearts
-    // mirror the backing button entity's availability and the card's
-    // in-flight state — but not the Find Song button's nothing-playing
-    // graying, since history entries carry their own artist/title.
-    const findState = this._entity("button", "find_like_matches")?.state.state;
-    const likeDisabled =
-      this._searching || findState === "unavailable" || findState === undefined;
+    const likeDisabled = this._likeDisabled();
     list
       .querySelectorAll<HTMLButtonElement>(".history-like-btn")
       .forEach((btn) => (btn.disabled = likeDisabled));
@@ -695,33 +745,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         color: var(--secondary-text-color);
         margin-bottom: 4px;
       }
-      .info-row {
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        margin-bottom: 4px;
-        width: 100%;
-      }
-      .label {
-        font-size: 0.8em;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--secondary-text-color);
-        min-width: 52px;
-        flex-shrink: 0;
-      }
-      .value {
-        font-size: 1em;
-        color: var(--primary-text-color);
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .artist-value {
-        font-weight: 600;
-      }
       .dropdown {
         width: 100%;
         min-height: 40px;
@@ -802,7 +825,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       .history-toggle.expanded .chevron {
         transform: rotate(-135deg);
       }
-      .history-list {
+      .track-list {
         list-style: none;
         padding: 0;
         margin: 6px 0 0;
@@ -811,7 +834,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         max-height: 300px;
         overflow-y: auto;
       }
-      .history-list.hidden {
+      .track-list.hidden {
         display: none;
       }
       .history-entry {

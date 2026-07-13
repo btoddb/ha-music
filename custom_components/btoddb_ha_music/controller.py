@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from typing import Any
 
 from homeassistant.components.media_player.const import (
@@ -107,10 +108,10 @@ class MusicController:
         # playback; not persisted across restarts.
         self._paused_entity_ids: list[str] = []
         # Recently played tracks, newest first, capped at PLAY_HISTORY_LIMIT.
-        # A track lands here when the now-playing track *changes away* from it
-        # (next track, stop, ...), so the history never duplicates the track
-        # currently shown as Now Playing. In-memory only — not persisted
-        # across restarts.
+        # A track lands here the moment it becomes the now-playing track
+        # (issue #40), so the newest entry duplicates Now Playing while it
+        # plays and nothing is lost when playback stops. In-memory only —
+        # not persisted across restarts.
         self.play_history: list[PlayedTrack] = []
         self._last_now_playing: NowPlaying | None = None
         self._listeners: list[SelectionListener] = []
@@ -507,13 +508,14 @@ class MusicController:
 
     @callback
     def record_now_playing(self, now_playing: NowPlaying | None = None) -> None:
-        """Push the previous track into the play history when the track changes.
+        """Push the current track into the play history when it starts playing.
 
-        Called by the now-playing sensor whenever it refreshes. The previous
-        track is recorded (newest first, capped at PLAY_HISTORY_LIMIT) only
-        when the artist/title pair actually changed and the previous track was
-        identifiable, so pause/volume state churn and radio streams without
-        metadata add nothing.
+        Called by the now-playing sensor whenever it refreshes. The current
+        track is recorded (newest first, capped at PLAY_HISTORY_LIMIT) the
+        moment its artist/title pair becomes the now-playing track (issue
+        #40), so stopping playback loses nothing. Pause/volume state churn
+        and radio streams without metadata add nothing; album metadata that
+        arrives after the track was recorded refreshes the newest entry.
         """
 
         current = now_playing if now_playing is not None else self.now_playing()
@@ -522,21 +524,26 @@ class MusicController:
             current.artist,
             current.title,
         ):
+            head = self.play_history[0] if self.play_history else None
+            if (
+                current.album
+                and head is not None
+                and (head.artist, head.title) == (current.artist, current.title)
+                and head.album != current.album
+            ):
+                self.play_history[0] = replace(head, album=current.album)
+                self._notify_listeners()
             return
         self._last_now_playing = current
 
-        if (
-            previous is None
-            or previous.artist == "unknown"
-            or previous.title == "unknown"
-        ):
+        if current.artist == "unknown" or current.title == "unknown":
             return
         self.play_history.insert(
             0,
             PlayedTrack(
-                previous.artist,
-                previous.title,
-                previous.album,
+                current.artist,
+                current.title,
+                current.album,
                 dt_util.utcnow().isoformat(),
             ),
         )

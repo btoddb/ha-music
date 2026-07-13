@@ -49,18 +49,20 @@ def _sensor_fixture() -> tuple[NowPlayingSensor, dict[str, _FakeState]]:
     return NowPlayingSensor(controller), states
 
 
-def test_sensor_publishes_empty_history_initially() -> None:
-    """Before any track change, the sensor exposes an empty history list."""
+def test_sensor_publishes_current_track_in_history_immediately() -> None:
+    """The playing track is already in the history at first publish (issue #40)."""
 
     sensor, _states = _sensor_fixture()
 
     assert sensor.native_value == "Artist A - Song A"
     assert sensor.extra_state_attributes["artist"] == "Artist A"
-    assert sensor.extra_state_attributes["history"] == []
+    assert [
+        (t["artist"], t["title"]) for t in sensor.extra_state_attributes["history"]
+    ] == [("Artist A", "Song A")]
 
 
 def test_sensor_publishes_history_on_track_transitions() -> None:
-    """Track changes push previous tracks into the published history attribute."""
+    """Each track lands in the published history as soon as it starts."""
 
     sensor, states = _sensor_fixture()
 
@@ -75,12 +77,13 @@ def test_sensor_publishes_history_on_track_transitions() -> None:
 
     history = sensor.extra_state_attributes["history"]
     assert [(t["artist"], t["title"]) for t in history] == [
+        ("Artist C", "Song C"),
         ("Artist B", "Song B"),
         ("Artist A", "Song A"),
     ]
     # Newest-first entries carry the PH-3 shape: artist/title/album/played_at.
     assert history[0]["album"] is None
-    assert history[1]["album"] == "Album A"
+    assert history[2]["album"] == "Album A"
     for track in history:
         assert set(track) == {"artist", "title", "album", "played_at"}
         assert track["played_at"]
