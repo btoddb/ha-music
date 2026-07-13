@@ -12,6 +12,9 @@ Hard-refresh your browser after each build — no HA restart or Lovelace resourc
 ## Source
 
 `src/index.ts` — single-file custom element `btoddb-ha-music-like-card`.
+Unit tests live in `src/index.test.ts` (Vitest + happy-dom); run them with
+`npm test` from the card directory. Behavior constraints are specified in
+`requirements/spec/music-card.md`.
 
 Card config options:
 
