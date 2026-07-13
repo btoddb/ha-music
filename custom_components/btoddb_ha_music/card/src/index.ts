@@ -41,6 +41,10 @@ interface ResolvedEntity {
   state: HassState;
 }
 
+// The single transport button (issue #39) doubles as Play, Pause, and
+// Resume, morphing its label and action to whichever transport applies.
+type TransportMode = "play" | "pause" | "resume";
+
 class BtoddbHaMusicLikeCard extends HTMLElement {
   private _config: CardConfig = {};
   private _hass: Hass | null = null;
@@ -55,6 +59,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _statusMessage = "";
   private _lastPlayingKey = "";
   private _historyExpanded = false;
+  private _transportMode: TransportMode = "play";
 
   static getStubConfig(): CardConfig {
     return { entity_prefix: "btoddb_ha_music" };
@@ -167,32 +172,24 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     );
     mediaSection.append(this._makeSectionLabel("Music"), mediaSelect);
 
-    // --- Play / Skip ---
+    // --- Play (doubles as Pause/Resume — issue #39) / Skip ---
     const playRow = document.createElement("div");
     playRow.className = "section btn-row play-row";
     const playBtn = this._makeButton("play-btn", "Play");
-    playBtn.addEventListener("click", () => this._onPlay());
+    playBtn.addEventListener("click", () => this._onTransport());
     const skipBtn = this._makeButton("skip-btn", "Skip");
     skipBtn.addEventListener("click", () => this._onSkip());
     playRow.append(playBtn, skipBtn);
 
-    // --- Stop / Find Song ---
+    // --- Stop ---
+    // Find Song was removed (issue #39 follow-up): the ♥ on the Now Playing
+    // entry runs the same now-playing search, so a separate button is
+    // redundant. The find-status row stays for no-match feedback.
     const stopRow = document.createElement("div");
     stopRow.className = "section btn-row stop-row";
     const stopBtn = this._makeButton("stop-btn", "Stop");
     stopBtn.addEventListener("click", () => this._onStop());
-    const findBtn = this._makeButton("find-btn", "Find Song");
-    findBtn.addEventListener("click", () => this._onFind());
-    stopRow.append(stopBtn, findBtn);
-
-    // --- Pause / Resume (playlist playback only) ---
-    const pauseRow = document.createElement("div");
-    pauseRow.className = "section btn-row pause-row";
-    const pauseBtn = this._makeButton("pause-btn", "Pause");
-    pauseBtn.addEventListener("click", () => this._onPause());
-    const resumeBtn = this._makeButton("resume-btn", "Resume");
-    resumeBtn.addEventListener("click", () => this._onResume());
-    pauseRow.append(pauseBtn, resumeBtn);
+    stopRow.append(stopBtn);
 
     const findStatus = document.createElement("div");
     findStatus.className = "find-status hidden";
@@ -228,7 +225,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       speakersSection,
       playRow,
       stopRow,
-      pauseRow,
       findStatus,
       likeSection
     );
@@ -329,14 +325,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     // is built from media metadata an idle player can retain after its queue
     // finishes. Older integrations without the attribute fall back to the
     // state string. (Computed above, before the Now Playing entry.)
-    this._updateActionButton(
-      ".play-btn",
-      ["play_music"],
-      this._playing,
-      "Play",
-      "Playing…",
-      !nothingPlaying
-    );
+    this._updateTransportButton(nothingPlaying);
     this._updateActionButton(
       ".skip-btn",
       ["skip_song", "next_track"],
@@ -351,28 +340,6 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       this._stopping,
       "Stop",
       "Stop",
-      nothingPlaying
-    );
-
-    // Pause/Resume are only meaningful for playlist playback. The backing
-    // button entities go unavailable unless a playlist was started (radio or
-    // nothing) — and, of the pair, whichever does not match the integration's
-    // paused/not-paused state — and the card additionally grays them when the
-    // now-playing sensor reports nothing.
-    this._updateActionButton(
-      ".pause-btn",
-      ["pause_music"],
-      this._pausing,
-      "Pause",
-      "Pausing…",
-      nothingPlaying
-    );
-    this._updateActionButton(
-      ".resume-btn",
-      ["resume_music"],
-      this._resuming,
-      "Resume",
-      "Resuming…",
       nothingPlaying
     );
 
@@ -436,21 +403,9 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       });
     }
 
-    // Find button + no-match feedback
-    const findBtn = this.shadowRoot.querySelector<HTMLButtonElement>(".find-btn");
+    // No-match feedback (the ♥ buttons drive the search now that the Find
+    // Song button is gone).
     const findStatus = this.shadowRoot.querySelector<HTMLElement>(".find-status");
-    if (findBtn) {
-      const findState = this._entity("button", "find_like_matches")?.state.state;
-      // Find Song (no arguments) searches for the now-playing track, so it
-      // also grays when nothing is playing. The history ♥ buttons pass an
-      // explicit artist/title and stay usable regardless (issue #27).
-      findBtn.disabled =
-        this._searching ||
-        nothingPlaying ||
-        findState === "unavailable" ||
-        findState === undefined;
-      findBtn.textContent = this._searching ? "Searching…" : "Find Song";
-    }
     if (findStatus) {
       const showNoMatches = this._noMatches && !this._searching && !hasCandidates;
       findStatus.classList.toggle("hidden", !showNoMatches);
@@ -599,6 +554,45 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     } else {
       dropdown.selectedIndex = -1;
     }
+  }
+
+  // The single Play button doubles as Pause and Resume (issue #39). It shows
+  // whichever transport applies to the current playback state and delegates to
+  // that action's availability rules: Resume while the integration reports a
+  // paused playlist (its resume_music button is available), Pause while a
+  // playlist plays un-paused (pause_music available), and Play otherwise —
+  // including radio, which grays Play because something is playing. The
+  // resume/pause backing entities are mutually exclusive per playback state
+  // (PM-8), so at most one wins and the button never presents both actions.
+  private _updateTransportButton(nothingPlaying: boolean): void {
+    let mode: TransportMode = "play";
+    if (!nothingPlaying) {
+      if (this._backingAvailable("resume_music")) mode = "resume";
+      else if (this._backingAvailable("pause_music")) mode = "pause";
+    }
+    this._transportMode = mode;
+
+    const specs: Record<
+      TransportMode,
+      { suffix: string; inFlight: boolean; label: string; busy: string; disabled: boolean }
+    > = {
+      play: { suffix: "play_music", inFlight: this._playing, label: "Play", busy: "Playing…", disabled: !nothingPlaying },
+      pause: { suffix: "pause_music", inFlight: this._pausing, label: "Pause", busy: "Pausing…", disabled: nothingPlaying },
+      resume: { suffix: "resume_music", inFlight: this._resuming, label: "Resume", busy: "Resuming…", disabled: nothingPlaying },
+    };
+    const spec = specs[mode];
+    this._updateActionButton(".play-btn", [spec.suffix], spec.inFlight, spec.label, spec.busy, spec.disabled);
+  }
+
+  private _backingAvailable(suffix: string): boolean {
+    const state = this._entity("button", suffix)?.state.state;
+    return state !== undefined && state !== "unavailable";
+  }
+
+  private _onTransport(): void {
+    if (this._transportMode === "pause") void this._onPause();
+    else if (this._transportMode === "resume") void this._onResume();
+    else void this._onPlay();
   }
 
   private _updateActionButton(
