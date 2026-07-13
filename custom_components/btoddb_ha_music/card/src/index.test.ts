@@ -46,6 +46,8 @@ function makeHass(overrides: FakeHass["states"] = {}): FakeHass {
       "button.btoddb_music_play_music": { state: "unknown", attributes: {} },
       "button.btoddb_ha_music_stop_music": { state: "unknown", attributes: {} },
       "button.btoddb_ha_music_skip_song": { state: "unknown", attributes: {} },
+      "button.btoddb_ha_music_pause_music": { state: "unknown", attributes: {} },
+      "button.btoddb_ha_music_resume_music": { state: "unknown", attributes: {} },
       "button.btoddb_ha_music_find_like_matches": { state: "unknown", attributes: {} },
       "button.btoddb_ha_music_confirm_like": { state: "unavailable", attributes: {} },
       "button.btoddb_ha_music_cancel_like": { state: "unavailable", attributes: {} },
@@ -105,6 +107,7 @@ describe(CARD_TYPE, () => {
       "section speakers-section",
       "section btn-row play-row",
       "section btn-row stop-row",
+      "section btn-row pause-row",
       "section like-section hidden",
     ]);
   });
@@ -207,6 +210,56 @@ describe(CARD_TYPE, () => {
     delete hass.states["button.btoddb_ha_music_skip_song"];
     const card = makeCard(hass);
     expect(shadow(card).querySelector<HTMLButtonElement>(".skip-btn")!.disabled).toBe(false);
+  });
+
+  it("pause and resume buttons call the integration services", async () => {
+    const hass = makeHass();
+    const card = makeCard(hass);
+    const root = shadow(card);
+
+    root.querySelector<HTMLButtonElement>(".pause-btn")!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>(".resume-btn")!.click();
+    await flush();
+
+    expect(hass.calls.map((c) => `${c.domain}.${c.service}`)).toEqual([
+      "btoddb_ha_music.pause_music",
+      "btoddb_ha_music.resume_music",
+    ]);
+  });
+
+  it("disables pause/resume when their backing button entities are unavailable", () => {
+    // The integration marks these unavailable while a radio station (or
+    // nothing) is playing — the card just mirrors that.
+    const hass = makeHass({
+      "button.btoddb_ha_music_pause_music": { state: "unavailable", attributes: {} },
+      "button.btoddb_ha_music_resume_music": { state: "unavailable", attributes: {} },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".pause-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".resume-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".stop-btn")!.disabled).toBe(false);
+  });
+
+  it("disables pause/resume when nothing is playing, even with available buttons", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": { state: "unknown", attributes: {} },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".pause-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".resume-btn")!.disabled).toBe(true);
+  });
+
+  it("enables pause/resume while a playlist is playing", () => {
+    const card = makeCard(makeHass());
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".pause-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".resume-btn")!.disabled).toBe(false);
   });
 
   it("find song calls find_like_matches and shows candidates with like/cancel", async () => {

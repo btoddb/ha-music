@@ -42,6 +42,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
   private _skipping = false;
   private _playing = false;
   private _stopping = false;
+  private _pausing = false;
+  private _resuming = false;
   private _noMatches = false;
   private _statusMessage = "";
   private _lastPlayingKey = "";
@@ -149,6 +151,15 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     findBtn.addEventListener("click", () => this._onFind());
     stopRow.append(stopBtn, findBtn);
 
+    // --- Pause / Resume (playlist playback only) ---
+    const pauseRow = document.createElement("div");
+    pauseRow.className = "section btn-row pause-row";
+    const pauseBtn = this._makeButton("pause-btn", "Pause");
+    pauseBtn.addEventListener("click", () => this._onPause());
+    const resumeBtn = this._makeButton("resume-btn", "Resume");
+    resumeBtn.addEventListener("click", () => this._onResume());
+    pauseRow.append(pauseBtn, resumeBtn);
+
     const findStatus = document.createElement("div");
     findStatus.className = "find-status hidden";
     findStatus.setAttribute("role", "status");
@@ -183,6 +194,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       speakersSection,
       playRow,
       stopRow,
+      pauseRow,
       findStatus,
       likeSection
     );
@@ -263,6 +275,31 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       "Skipping…"
     );
     this._updateActionButton(".stop-btn", ["stop_music"], this._stopping, "Stop", "Stop");
+
+    // Pause/Resume are only meaningful for playlist playback. The backing
+    // button entities go unavailable unless a playlist was started (radio or
+    // nothing), and the card additionally grays them when the now-playing
+    // sensor reports nothing (e.g. the playlist queue finished on its own).
+    const nothingPlaying =
+      nowPlaying === undefined ||
+      nowPlaying.state === "unknown" ||
+      nowPlaying.state === "unavailable";
+    this._updateActionButton(
+      ".pause-btn",
+      ["pause_music"],
+      this._pausing,
+      "Pause",
+      "Pausing…",
+      nothingPlaying
+    );
+    this._updateActionButton(
+      ".resume-btn",
+      ["resume_music"],
+      this._resuming,
+      "Resume",
+      "Resuming…",
+      nothingPlaying
+    );
 
     // Like candidates
     const likeCandidate = this._entity("select", "like_candidate")?.state;
@@ -380,7 +417,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     buttonSuffixes: string[],
     inFlight: boolean,
     label: string,
-    inFlightLabel: string
+    inFlightLabel: string,
+    forceDisabled = false
   ): void {
     if (!this.shadowRoot) return;
     const btn = this.shadowRoot.querySelector<HTMLButtonElement>(selector);
@@ -388,7 +426,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const backing = buttonSuffixes
       .map((suffix) => this._entity("button", suffix)?.state.state)
       .find((state) => state !== undefined);
-    btn.disabled = inFlight || backing === "unavailable" || backing === undefined;
+    btn.disabled =
+      forceDisabled || inFlight || backing === "unavailable" || backing === undefined;
     btn.textContent = inFlight ? inFlightLabel : label;
   }
 
@@ -425,6 +464,22 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       "stop_music",
       (v) => (this._stopping = v),
       () => this._stopping
+    );
+  }
+
+  private async _onPause(): Promise<void> {
+    await this._runTransient(
+      "pause_music",
+      (v) => (this._pausing = v),
+      () => this._pausing
+    );
+  }
+
+  private async _onResume(): Promise<void> {
+    await this._runTransient(
+      "resume_music",
+      (v) => (this._resuming = v),
+      () => this._resuming
     );
   }
 

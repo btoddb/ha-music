@@ -892,3 +892,151 @@ def test_play_music_requires_a_selection() -> None:
 
     with pytest.raises(HomeAssistantError):
         asyncio.run(controller.async_play_music())
+
+
+def _play_controller(hass: _FakeHass, *, speakers: dict) -> MusicController:
+    """Build a controller with one radio station and one playlist configured."""
+
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={
+            "speakers": speakers,
+            "radio_stations": {"KEXP": "radiobrowser://radio/kexp"},
+            "playlists": {"Dinner": "spotify://playlist/dinner"},
+        },
+        options={},
+    )
+    return MusicController(hass, entry)
+
+
+def test_pause_music_no_target_targets_only_active_speakers() -> None:
+    """With no target, only active speakers receive the media_pause call."""
+
+    states = {
+        "media_player.playing": _FakeState({}, state="playing"),
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.unavailable": _FakeState({}, state="unavailable"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "All": [
+                "media_player.playing",
+                "media_player.idle",
+                "media_player.unavailable",
+            ]
+        },
+    )
+
+    asyncio.run(controller.async_pause_music())
+
+    assert len(hass.services.calls) == 1
+    domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert domain == "media_player"
+    assert service == "media_pause"
+    assert data["entity_id"] == ["media_player.playing"]
+
+
+def test_resume_music_targets_paused_speakers() -> None:
+    """Paused speakers are active targets, so resume reaches them."""
+
+    states = {
+        "media_player.paused": _FakeState({}, state="paused"),
+        "media_player.off": _FakeState({}, state="off"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={"All": ["media_player.paused", "media_player.off"]},
+    )
+
+    asyncio.run(controller.async_resume_music())
+
+    assert len(hass.services.calls) == 1
+    domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert domain == "media_player"
+    assert service == "media_play"
+    assert data["entity_id"] == ["media_player.paused"]
+
+
+def test_pause_music_no_active_speakers_makes_no_call() -> None:
+    """With no active speakers, pause returns without calling any service."""
+
+    states = {
+        "media_player.idle": _FakeState({}, state="idle"),
+        "media_player.off": _FakeState({}, state="off"),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={"All": ["media_player.idle", "media_player.off"]},
+    )
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_resume_music())
+
+    assert hass.services.calls == []
+
+
+def test_pause_and_resume_explicit_target_is_not_filtered() -> None:
+    """An explicit speaker target is passed through unchanged, regardless of state."""
+
+    states = {"media_player.idle_speaker": _FakeState({}, state="idle")}
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass, speakers={"Office": "media_player.idle_speaker"}
+    )
+
+    asyncio.run(controller.async_pause_music(speakers="media_player.idle_speaker"))
+    asyncio.run(controller.async_resume_music(speakers="media_player.idle_speaker"))
+
+    assert [call[1] for call in hass.services.calls] == ["media_pause", "media_play"]
+    assert all(
+        call[2]["entity_id"] == ["media_player.idle_speaker"]
+        for call in hass.services.calls
+    )
+
+
+def test_playing_kind_tracks_playback_lifecycle() -> None:
+    """Play calls record the media kind and stop clears it."""
+
+    states = {"media_player.office": _FakeState({}, state="playing")}
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    assert controller.playing_kind is None
+
+    asyncio.run(controller.async_play_music(media="KEXP"))
+    assert controller.playing_kind == "radio_station"
+
+    asyncio.run(controller.async_play_music(media="Dinner"))
+    assert controller.playing_kind == "playlist"
+
+    asyncio.run(controller.async_stop_music())
+    assert controller.playing_kind is None
+
+    asyncio.run(controller.async_play_radio_station(station="KEXP"))
+    assert controller.playing_kind == "radio_station"
+
+    asyncio.run(controller.async_shuffle_play_playlist(playlist="Dinner"))
+    assert controller.playing_kind == "playlist"
+
+
+def test_playing_kind_change_notifies_listeners() -> None:
+    """Playing-kind transitions notify listeners so button availability refreshes."""
+
+    states = {"media_player.office": _FakeState({}, state="playing")}
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    notified = []
+    controller.async_add_listener(lambda: notified.append(True))
+
+    asyncio.run(controller.async_shuffle_play_playlist(playlist="Dinner"))
+    assert notified
+
+    notified.clear()
+    asyncio.run(controller.async_stop_music())
+    assert notified
