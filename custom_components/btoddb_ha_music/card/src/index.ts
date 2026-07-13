@@ -180,11 +180,11 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     content.append(
       nowPlaying,
       mediaSection,
+      speakersSection,
       playRow,
       stopRow,
       findStatus,
-      likeSection,
-      speakersSection
+      likeSection
     );
 
     card.append(content);

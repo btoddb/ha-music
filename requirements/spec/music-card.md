@@ -8,9 +8,9 @@ selection.
 - **constraint CARD-1** The card renders, in order: a "Play Something ..."
   header; a Now Playing section (artist and song from
   `sensor.<prefix>_now_playing`); a music-source dropdown backed by the
-  combined media select; a Play/Skip button row; a Stop/Find Song button row;
-  the like-candidate flow (hidden until Find Song returns matches); and a
-  speakers dropdown backed by the speaker-group select.
+  combined media select; a speakers dropdown backed by the speaker-group
+  select; a Play/Skip button row; a Stop/Find Song button row; and the
+  like-candidate flow (hidden until Find Song returns matches).
 - **constraint CARD-2** Entity resolution tries
   `<domain>.<entity_prefix>_<suffix>` first, then falls back to any entity in
   the domain whose id ends with `_<suffix>`, preferring ids that share the

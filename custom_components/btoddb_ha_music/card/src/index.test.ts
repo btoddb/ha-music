@@ -102,10 +102,10 @@ describe(CARD_TYPE, () => {
     expect(sections).toEqual([
       "section now-playing-section",
       "section media-section",
+      "section speakers-section",
       "section btn-row play-row",
       "section btn-row stop-row",
       "section like-section hidden",
-      "section speakers-section",
     ]);
   });
 
