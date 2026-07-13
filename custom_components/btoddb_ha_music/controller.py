@@ -507,7 +507,12 @@ class MusicController:
         return NowPlaying("unknown", None, "unknown", "unknown", None)
 
     @callback
-    def record_now_playing(self, now_playing: NowPlaying | None = None) -> None:
+    def record_now_playing(
+        self,
+        now_playing: NowPlaying | None = None,
+        *,
+        playback_active: bool | None = None,
+    ) -> None:
         """Push the current track into the play history when it starts playing.
 
         Called by the now-playing sensor whenever it refreshes. The current
@@ -516,7 +521,21 @@ class MusicController:
         #40), so stopping playback loses nothing. Pause/volume state churn
         and radio streams without metadata add nothing; album metadata that
         arrives after the track was recorded refreshes the newest entry.
+
+        Recording is gated on the playback_active() lifecycle (PR #41
+        review): an idle player retaining its last artist/title must not
+        create a phantom play (integration startup, speaker switch), and
+        going inactive resets start detection so replaying the same track
+        after a stop records a new entry. A pause this controller performed
+        counts as active (PM-8), so it neither resets nor re-records.
         """
+
+        active = (
+            playback_active if playback_active is not None else self.playback_active()
+        )
+        if not active:
+            self._last_now_playing = None
+            return
 
         current = now_playing if now_playing is not None else self.now_playing()
         previous = self._last_now_playing

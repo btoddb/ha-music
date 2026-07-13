@@ -14,6 +14,13 @@ review what played and like a song they missed (issue #27).
   unknown title (e.g. a radio stream without metadata) is never recorded.
   Album metadata that arrives after the track was recorded refreshes the
   newest history entry in place.
+- **constraint PH-5** Recording is gated on the `playback_active()`
+  lifecycle: while playback is inactive nothing is recorded — an idle player
+  retaining its last artist/title (integration startup, speaker switch) must
+  not create a phantom play — and a real active→inactive transition resets
+  start detection so replaying the same track after a stop records a new
+  entry. An integration-performed pause counts as active (PM-8), so pausing
+  neither resets nor re-records.
 - **constraint PH-3** The history is exposed as the `history` attribute of
   `sensor.<prefix>_now_playing`: a list of `{artist, title, album,
   played_at}` objects, newest first, where `played_at` is an ISO-8601 UTC

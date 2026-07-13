@@ -22,7 +22,9 @@ class _FakeState:
         self.attributes = attributes
 
 
-def _sensor_fixture() -> tuple[NowPlayingSensor, dict[str, _FakeState]]:
+def _sensor_fixture(
+    *, player_state: str = "playing"
+) -> tuple[NowPlayingSensor, dict[str, _FakeState]]:
     """Build a NowPlayingSensor over a fake hass whose states can be mutated."""
 
     states: dict[str, _FakeState] = {
@@ -31,7 +33,8 @@ def _sensor_fixture() -> tuple[NowPlayingSensor, dict[str, _FakeState]]:
                 ATTR_MEDIA_ARTIST: "Artist A",
                 ATTR_MEDIA_TITLE: "Song A",
                 ATTR_MEDIA_ALBUM_NAME: "Album A",
-            }
+            },
+            state=player_state,
         )
     }
     hass = SimpleNamespace(states=SimpleNamespace(get=states.get), services=None)
@@ -88,6 +91,23 @@ def test_sensor_publishes_history_on_track_transitions() -> None:
         assert set(track) == {"artist", "title", "album", "played_at"}
         assert track["played_at"]
     assert sensor.extra_state_attributes["title"] == "Song C"
+
+
+def test_sensor_ignores_retained_metadata_on_an_idle_player() -> None:
+    """Startup over an idle player with stale metadata records no phantom play."""
+
+    sensor, states = _sensor_fixture(player_state="idle")
+
+    assert sensor.extra_state_attributes["playback_active"] is False
+    assert sensor.extra_state_attributes["history"] == []
+
+    # The same track actually starting afterwards is recorded.
+    states["media_player.office"].state = "playing"
+    sensor._update_now_playing()
+
+    assert [
+        (t["artist"], t["title"]) for t in sensor.extra_state_attributes["history"]
+    ] == [("Artist A", "Song A")]
 
 
 def test_sensor_playback_active_reflects_player_state_not_metadata() -> None:
