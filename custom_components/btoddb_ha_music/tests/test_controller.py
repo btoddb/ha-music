@@ -711,3 +711,184 @@ def test_next_track_explicit_target_is_not_filtered() -> None:
     _domain, service, data, _blocking, _ret = hass.services.calls[0]
     assert service == "media_next_track"
     assert data["entity_id"] == ["media_player.idle_speaker"]
+
+
+def test_media_options_combines_stations_and_playlists() -> None:
+    """With the default filter, stations come first, then playlists."""
+
+    controller = _controller(
+        radio_stations={"KEXP": "radiobrowser://radio/kexp"},
+        playlists={"Dinner": "spotify://playlist/dinner"},
+    )
+
+    assert controller.media_options() == ["KEXP", "Dinner"]
+    assert controller.selected_media == "KEXP"
+
+
+def test_media_options_disambiguates_duplicate_names() -> None:
+    """A name in both mappings is suffixed so both stay selectable."""
+
+    controller = _controller(
+        radio_stations={"Jazz": "radiobrowser://radio/jazz"},
+        playlists={"Jazz": "spotify://playlist/jazz"},
+    )
+
+    assert controller.media_options() == ["Jazz (Radio)", "Jazz (Playlist)"]
+
+
+def test_media_filter_narrows_options_and_moves_selection() -> None:
+    """Filtering away the current selection falls back to the first match."""
+
+    controller = _controller(
+        radio_stations={"KEXP": "radiobrowser://radio/kexp"},
+        playlists={"Dinner": "spotify://playlist/dinner"},
+    )
+
+    controller.set_selected_media_filter("Playlists")
+
+    assert controller.media_options() == ["Dinner"]
+    assert controller.selected_media == "Dinner"
+
+    controller.set_selected_media_filter("Radio stations")
+
+    assert controller.media_options() == ["KEXP"]
+    assert controller.selected_media == "KEXP"
+
+
+def test_media_filter_keeps_valid_selection() -> None:
+    """A selection still visible under the new filter is kept."""
+
+    controller = _controller(
+        radio_stations={"KEXP": "radiobrowser://radio/kexp"},
+        playlists={"Dinner": "spotify://playlist/dinner"},
+    )
+    controller.set_selected_media("Dinner")
+
+    controller.set_selected_media_filter("Playlists")
+
+    assert controller.selected_media == "Dinner"
+
+
+def test_set_selected_media_filter_rejects_unknown_option() -> None:
+    """An unknown filter value is rejected."""
+
+    controller = _controller()
+
+    with pytest.raises(ValueError):
+        controller.set_selected_media_filter("nope")
+
+
+def test_set_selected_media_rejects_label_hidden_by_filter() -> None:
+    """A label filtered out of the dropdown cannot be selected."""
+
+    controller = _controller(
+        radio_stations={"KEXP": "radiobrowser://radio/kexp"},
+        playlists={"Dinner": "spotify://playlist/dinner"},
+    )
+    controller.set_selected_media_filter("Playlists")
+
+    with pytest.raises(ValueError):
+        controller.set_selected_media("KEXP")
+
+
+def test_play_music_selected_radio_station_does_not_shuffle() -> None:
+    """Playing a selected radio station turns shuffle off."""
+
+    hass = _FakeHass()
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={
+            "speakers": {"Office": "media_player.office"},
+            "radio_stations": {"KEXP": "radiobrowser://radio/kexp"},
+            "playlists": {"Dinner": "spotify://playlist/dinner"},
+        },
+        options={},
+    )
+    controller = MusicController(hass, entry)
+
+    asyncio.run(controller.async_play_music())
+
+    shuffle_call, play_call = hass.services.calls
+    assert shuffle_call[1] == "shuffle_set"
+    assert shuffle_call[2]["shuffle"] is False
+    assert play_call[0] == "music_assistant"
+    assert play_call[2]["media_id"] == "radiobrowser://radio/kexp"
+
+
+def test_play_music_selected_playlist_shuffles() -> None:
+    """Playing a selected playlist turns shuffle on."""
+
+    hass = _FakeHass()
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={
+            "speakers": {"Office": "media_player.office"},
+            "radio_stations": {"KEXP": "radiobrowser://radio/kexp"},
+            "playlists": {"Dinner": "spotify://playlist/dinner"},
+        },
+        options={},
+    )
+    controller = MusicController(hass, entry)
+    controller.set_selected_media("Dinner")
+
+    asyncio.run(controller.async_play_music())
+
+    shuffle_call, play_call = hass.services.calls
+    assert shuffle_call[2]["shuffle"] is True
+    assert play_call[2]["media_id"] == "spotify://playlist/dinner"
+
+
+def test_play_music_resolves_explicit_mapping_names() -> None:
+    """An explicit media argument resolves through both mappings."""
+
+    controller = _controller(
+        radio_stations={"KEXP": "radiobrowser://radio/kexp"},
+        playlists={"Dinner": "spotify://playlist/dinner"},
+    )
+
+    assert controller._resolve_music("KEXP") == ("radiobrowser://radio/kexp", False)
+    assert controller._resolve_music("Dinner") == ("spotify://playlist/dinner", True)
+
+
+def test_play_music_resolves_suffixed_duplicate_labels() -> None:
+    """Suffixed duplicate labels resolve to the right mapping and shuffle."""
+
+    controller = _controller(
+        radio_stations={"Jazz": "radiobrowser://radio/jazz"},
+        playlists={"Jazz": "spotify://playlist/jazz"},
+    )
+
+    assert controller._resolve_music("Jazz (Radio)") == (
+        "radiobrowser://radio/jazz",
+        False,
+    )
+    assert controller._resolve_music("Jazz (Playlist)") == (
+        "spotify://playlist/jazz",
+        True,
+    )
+
+
+def test_play_music_raw_uri_shuffles_only_playlists() -> None:
+    """A raw URI is passed through, shuffled only when it is a playlist."""
+
+    controller = _controller()
+
+    assert controller._resolve_music("spotify://playlist/xyz") == (
+        "spotify://playlist/xyz",
+        True,
+    )
+    assert controller._resolve_music("radiobrowser://radio/abc") == (
+        "radiobrowser://radio/abc",
+        False,
+    )
+
+
+def test_play_music_requires_a_selection() -> None:
+    """With nothing configured or selected, play music refuses."""
+
+    controller = _controller(speakers={"Office": "media_player.office"})
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(controller.async_play_music())

@@ -26,6 +26,10 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_LIKE_PLAYLIST_ID,
+    MEDIA_FILTER_ALL,
+    MEDIA_FILTER_OPTIONS,
+    MEDIA_FILTER_PLAYLISTS,
+    MEDIA_FILTER_RADIO_STATIONS,
     CONF_LIKE_SEARCH_LIMIT,
     CONF_PLAYLISTS,
     CONF_RADIO_STATIONS,
@@ -40,7 +44,13 @@ from .const import (
     SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
     SPOTIFYPLUS_DOMAIN,
 )
-from .models import LikeCandidate, NamedMapping, NowPlaying, parse_named_mapping
+from .models import (
+    LikeCandidate,
+    MediaItem,
+    NamedMapping,
+    NowPlaying,
+    parse_named_mapping,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,6 +78,9 @@ class MusicController:
         self.selected_speakers = _first_option(self.speakers)
         self.selected_radio_station = _first_option(self.radio_stations)
         self.selected_playlist = _first_option(self.playlists)
+        self.media_items = _build_media_items(self.radio_stations, self.playlists)
+        self.selected_media_filter = MEDIA_FILTER_ALL
+        self.selected_media = next(iter(self.media_options()), None)
         self.spotify_entity_id = data.get(CONF_SPOTIFY_ENTITY) or None
         self.like_search_limit = int(
             data.get(CONF_LIKE_SEARCH_LIMIT, DEFAULT_LIKE_SEARCH_LIMIT)
@@ -125,6 +138,38 @@ class MusicController:
 
         self._set_option("playlist", option, self.playlists)
 
+    def media_options(self) -> list[str]:
+        """Return the combined media labels matching the current filter."""
+
+        if self.selected_media_filter == MEDIA_FILTER_RADIO_STATIONS:
+            kinds = {"radio_station"}
+        elif self.selected_media_filter == MEDIA_FILTER_PLAYLISTS:
+            kinds = {"playlist"}
+        else:
+            kinds = {"radio_station", "playlist"}
+        return [item.label for item in self.media_items if item.kind in kinds]
+
+    @callback
+    def set_selected_media_filter(self, option: str) -> None:
+        """Set the media filter, keeping the media selection valid."""
+
+        if option not in MEDIA_FILTER_OPTIONS:
+            raise ValueError(f"Unknown media filter: {option}")
+        self.selected_media_filter = option
+        options = self.media_options()
+        if self.selected_media not in options:
+            self.selected_media = next(iter(options), None)
+        self._notify_listeners()
+
+    @callback
+    def set_selected_media(self, option: str) -> None:
+        """Set the selected combined media option."""
+
+        if option not in self.media_options():
+            raise ValueError(f"Unknown media: {option}")
+        self.selected_media = option
+        self._notify_listeners()
+
     async def async_play_radio_station(
         self, *, station: str | None = None, speakers: str | list[str] | None = None
     ) -> None:
@@ -154,6 +199,44 @@ class MusicController:
         )
         await self._async_set_shuffle(entity_ids, shuffle=True)
         await self._async_play_media(entity_ids, media_id)
+
+    async def async_play_music(
+        self, *, media: str | None = None, speakers: str | list[str] | None = None
+    ) -> None:
+        """Play the selected or requested media, radio or playlist alike.
+
+        Radio stations play as-is; playlists are shuffled first. An unmapped
+        value is treated as a raw Music Assistant URI and shuffled only when
+        it looks like a playlist.
+        """
+
+        entity_ids = self._resolve_speakers(speakers)
+        media_id, shuffle = self._resolve_music(media)
+        await self._async_set_shuffle(entity_ids, shuffle=shuffle)
+        await self._async_play_media(entity_ids, media_id)
+
+    def _resolve_music(self, requested: str | None) -> tuple[str, bool]:
+        """Resolve a combined media label, mapping name, or raw URI.
+
+        Returns the media id and whether it should be shuffled.
+        """
+
+        option = requested or self.selected_media
+        if option is None:
+            raise HomeAssistantError("No music is configured or selected")
+
+        for item in self.media_items:
+            if item.label == option:
+                return item.media_id, item.kind == "playlist"
+
+        # Not a catalog label: accept a raw mapping name or Music Assistant URI.
+        station = self.radio_stations.get(option)
+        if isinstance(station, str):
+            return station, False
+        playlist = self.playlists.get(option)
+        if isinstance(playlist, str):
+            return playlist, True
+        return option, "playlist" in option
 
     async def _async_set_shuffle(self, entity_ids: list[str], *, shuffle: bool) -> None:
         """Set the shuffle mode on the target players before playback."""
@@ -499,6 +582,30 @@ def _normalize_playlist_id(raw: Any) -> str | None:
 
     value = value.split("?", 1)[0].strip("/").split("/", 1)[0]
     return value or None
+
+
+def _build_media_items(
+    radio_stations: NamedMapping, playlists: NamedMapping
+) -> list[MediaItem]:
+    """Combine radio stations and playlists into one labeled catalog.
+
+    A name configured as both a radio station and a playlist gets a kind
+    suffix on each label so the two stay selectable in one dropdown.
+    """
+
+    duplicates = set(radio_stations) & set(playlists)
+    items: list[MediaItem] = []
+    for name, value in radio_stations.items():
+        if not isinstance(value, str):
+            continue
+        label = f"{name} (Radio)" if name in duplicates else name
+        items.append(MediaItem(label, "radio_station", value))
+    for name, value in playlists.items():
+        if not isinstance(value, str):
+            continue
+        label = f"{name} (Playlist)" if name in duplicates else name
+        items.append(MediaItem(label, "playlist", value))
+    return items
 
 
 def _first_option(mapping: NamedMapping) -> str | None:

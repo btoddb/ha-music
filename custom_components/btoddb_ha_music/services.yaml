@@ -1,3 +1,18 @@
+play_music:
+  target:
+  fields:
+    config_entry:
+      example: "01J00000000000000000000000"
+      selector:
+        text:
+    media:
+      example: "KEXP"
+      selector:
+        text:
+    speakers:
+      example: "Kitchen"
+      selector:
+        object:
 play_radio_station:
   target:
   fields:

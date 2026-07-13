@@ -51,11 +51,20 @@
       "playlist": {
         "name": "Playlist"
       },
+      "media_filter": {
+        "name": "Music filter"
+      },
+      "media": {
+        "name": "Music"
+      },
       "like_candidate": {
         "name": "Like candidate"
       }
     },
     "button": {
+      "play_music": {
+        "name": "Play music"
+      },
       "play_radio_station": {
         "name": "Play radio station"
       },
