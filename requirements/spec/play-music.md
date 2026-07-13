@@ -26,7 +26,13 @@ backward compatibility.
   (issue #26) call `media_player.media_pause` / `media_player.media_play` on
   the actively-playing configured speakers, using the same active-target
   resolution as stop/skip (paused players count as active so Resume reaches
-  them; explicit `speakers` targets pass through unfiltered).
+  them; explicit `speakers` targets pass through unfiltered). With no
+  explicit target, active players sharing one Music Assistant
+  `active_queue` are additionally collapsed to a single target per queue —
+  the `mass_player_type: group` player when present, else the first — because
+  MA rejects transport commands sent to synced group members
+  ("set_members needs to be implemented when PlayerFeature.SET_MEMBERS is
+  set").
 - **constraint PM-7** The controller records the kind of media it last
   started (`playing_kind`: radio station or playlist), clearing it on
   `stop_music`. `button.<prefix>_pause_music` and
