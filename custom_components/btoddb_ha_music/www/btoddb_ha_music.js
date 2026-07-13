@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.23
-    const CARD_VERSION = "v0.0.23";
+    // v0.0.24
+    const CARD_VERSION = "v0.0.24";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -18,6 +18,7 @@
         _noMatches = false;
         _statusMessage = "";
         _lastPlayingKey = "";
+        _historyExpanded = false;
         static getStubConfig() {
             return { entity_prefix: "btoddb_ha_music" };
         }
@@ -77,10 +78,26 @@
             card.setAttribute("header", "Play Something ...");
             const content = document.createElement("div");
             content.className = "card-content";
-            // --- Now Playing ---
+            // --- Now Playing + History ---
             const nowPlaying = document.createElement("div");
             nowPlaying.className = "section now-playing-section";
-            nowPlaying.append(this._makeSectionLabel("Now Playing"), this._makeInfoRow("artist-row", "Artist", "artist-value"), this._makeInfoRow("title-row", "Song", "title-value"));
+            // The History title is always visible; the chevron shows/hides the list.
+            const historyToggle = document.createElement("button");
+            historyToggle.className = "history-toggle";
+            historyToggle.setAttribute("aria-expanded", "false");
+            const historyLabel = this._makeSectionLabel("History");
+            historyLabel.classList.add("history-label");
+            const chevron = document.createElement("span");
+            chevron.className = "chevron";
+            chevron.setAttribute("aria-hidden", "true");
+            historyToggle.append(historyLabel, chevron);
+            historyToggle.addEventListener("click", () => {
+                this._historyExpanded = !this._historyExpanded;
+                this._update();
+            });
+            const historyList = document.createElement("ul");
+            historyList.className = "history-list hidden";
+            nowPlaying.append(this._makeSectionLabel("Now Playing"), this._makeInfoRow("artist-row", "Artist", "artist-value"), this._makeInfoRow("title-row", "Song", "title-value"), historyToggle, historyList);
             // --- Music source selector ---
             const mediaSection = document.createElement("div");
             mediaSection.className = "section media-section";
@@ -186,6 +203,8 @@
             const titleEl = this.shadowRoot.querySelector(".title-value");
             if (titleEl)
                 titleEl.textContent = String(nowPlaying?.attributes?.title ?? "—");
+            // History (from the now-playing sensor's history attribute, newest first)
+            this._updateHistory(nowPlaying?.attributes?.history ?? []);
             // Selectors
             this._updateDropdown(".media-select", this._entity("select", "music"));
             this._updateDropdown(".speakers-select", this._entity("select", "speaker_group"));
@@ -270,6 +289,62 @@
                 likeBtn.disabled = this._entity("button", "confirm_like")?.state.state === "unavailable";
             if (cancelBtn)
                 cancelBtn.disabled = this._entity("button", "cancel_like")?.state.state === "unavailable";
+        }
+        _updateHistory(history) {
+            if (!this.shadowRoot)
+                return;
+            const toggle = this.shadowRoot.querySelector(".history-toggle");
+            if (toggle) {
+                toggle.setAttribute("aria-expanded", String(this._historyExpanded));
+                toggle.classList.toggle("expanded", this._historyExpanded);
+            }
+            const list = this.shadowRoot.querySelector(".history-list");
+            if (!list)
+                return;
+            list.classList.toggle("hidden", !this._historyExpanded);
+            const key = (t) => `${t.artist}|${t.title}|${t.played_at}`;
+            const existingKeys = Array.from(list.querySelectorAll(".history-entry")).map((li) => li.dataset.key ?? "");
+            const hadEmptyRow = list.querySelector(".history-empty") !== null;
+            const newKeys = history.map(key);
+            if (existingKeys.join("\0") !== newKeys.join("\0") ||
+                hadEmptyRow !== (history.length === 0)) {
+                list.innerHTML = "";
+                if (history.length === 0) {
+                    const empty = document.createElement("li");
+                    empty.className = "history-empty";
+                    empty.textContent = "No songs played yet";
+                    list.append(empty);
+                }
+                for (const track of history) {
+                    const li = document.createElement("li");
+                    li.className = "history-entry";
+                    li.dataset.key = key(track);
+                    const text = document.createElement("div");
+                    text.className = "history-text";
+                    const artistSpan = document.createElement("span");
+                    artistSpan.className = "history-artist";
+                    artistSpan.textContent = track.artist;
+                    const songSpan = document.createElement("span");
+                    songSpan.className = "history-song";
+                    songSpan.textContent = track.title;
+                    text.append(artistSpan, songSpan);
+                    const likeBtn = document.createElement("button");
+                    likeBtn.className = "history-like-btn";
+                    likeBtn.textContent = "♥";
+                    likeBtn.title = "Like this song";
+                    likeBtn.setAttribute("aria-label", `Like ${track.artist} - ${track.title}`);
+                    likeBtn.addEventListener("click", () => this._onFind({ artist: track.artist, title: track.title }));
+                    li.append(text, likeBtn);
+                    list.append(li);
+                }
+            }
+            // Liking from history goes through find_like_matches, so the hearts
+            // mirror the Find Song button's availability and in-flight state.
+            const findState = this._entity("button", "find_like_matches")?.state.state;
+            const likeDisabled = this._searching || findState === "unavailable" || findState === undefined;
+            list
+                .querySelectorAll(".history-like-btn")
+                .forEach((btn) => (btn.disabled = likeDisabled));
         }
         _updateDropdown(selector, resolved) {
             if (!this.shadowRoot)
@@ -363,14 +438,14 @@
                 this._update();
             }
         }
-        async _onFind() {
+        async _onFind(data) {
             if (!this._hass || this._searching)
                 return;
             this._searching = true;
             this._noMatches = false;
             this._update();
             try {
-                await this._callService("find_like_matches");
+                await this._callService("find_like_matches", data);
             }
             catch (err) {
                 this._noMatches = true;
@@ -382,10 +457,10 @@
                 this._update();
             }
         }
-        async _callService(service) {
+        async _callService(service, data) {
             if (!this._hass)
                 return;
-            await this._hass.callService("btoddb_ha_music", service);
+            await this._hass.callService("btoddb_ha_music", service, data);
         }
         _css() {
             return `
@@ -486,6 +561,100 @@
         background-color: rgba(0,0,0,.12);
         color: rgba(0,0,0,.37);
         box-shadow: none;
+        cursor: not-allowed;
+      }
+      .history-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 8px;
+        padding: 0;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font: inherit;
+        text-align: left;
+      }
+      .history-toggle .history-label {
+        margin-bottom: 0;
+      }
+      .chevron {
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--secondary-text-color);
+        border-bottom: 2px solid var(--secondary-text-color);
+        transform: rotate(45deg);
+        transition: transform 0.15s ease;
+        margin-right: 4px;
+      }
+      .history-toggle.expanded .chevron {
+        transform: rotate(-135deg);
+      }
+      .history-list {
+        list-style: none;
+        padding: 0;
+        margin: 6px 0 0;
+        border: 1px solid var(--divider-color, #e0e0e0);
+        border-radius: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .history-list.hidden {
+        display: none;
+      }
+      .history-entry {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      }
+      .history-entry:last-child {
+        border-bottom: none;
+      }
+      .history-text {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+      }
+      .history-artist {
+        font-size: 0.9em;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .history-song {
+        font-size: 0.85em;
+        color: var(--primary-text-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .history-empty {
+        padding: 8px 12px;
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
+        font-style: italic;
+      }
+      .history-like-btn {
+        flex-shrink: 0;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 1.2em;
+        line-height: 1;
+        padding: 4px 6px;
+        color: var(--primary-color, #03a9f4);
+      }
+      .history-like-btn:hover:not(:disabled) {
+        transform: scale(1.15);
+      }
+      .history-like-btn:disabled {
+        color: rgba(0,0,0,.26);
         cursor: not-allowed;
       }
       .find-status {
