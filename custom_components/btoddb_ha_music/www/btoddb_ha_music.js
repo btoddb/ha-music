@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.16
-    const CARD_VERSION = "v0.0.16";
+    // v0.0.17
+    const CARD_VERSION = "v0.0.17";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
