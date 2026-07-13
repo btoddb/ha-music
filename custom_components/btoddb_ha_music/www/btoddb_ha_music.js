@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.26
-    const CARD_VERSION = "v0.0.26";
+    // v0.0.27
+    const CARD_VERSION = "v0.0.27";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -19,6 +19,7 @@
         _statusMessage = "";
         _lastPlayingKey = "";
         _historyExpanded = false;
+        _transportMode = "play";
         static getStubConfig() {
             return { entity_prefix: "btoddb_ha_music" };
         }
@@ -109,30 +110,23 @@
             const mediaSelect = this._makeDropdown("media-select");
             mediaSelect.addEventListener("change", () => this._onDropdownChange("select", "music", mediaSelect.value));
             mediaSection.append(this._makeSectionLabel("Music"), mediaSelect);
-            // --- Play / Skip ---
+            // --- Play (doubles as Pause/Resume — issue #39) / Skip ---
             const playRow = document.createElement("div");
             playRow.className = "section btn-row play-row";
             const playBtn = this._makeButton("play-btn", "Play");
-            playBtn.addEventListener("click", () => this._onPlay());
+            playBtn.addEventListener("click", () => this._onTransport());
             const skipBtn = this._makeButton("skip-btn", "Skip");
             skipBtn.addEventListener("click", () => this._onSkip());
             playRow.append(playBtn, skipBtn);
-            // --- Stop / Find Song ---
+            // --- Stop ---
+            // Find Song was removed (issue #39 follow-up): the ♥ on the Now Playing
+            // entry runs the same now-playing search, so a separate button is
+            // redundant. The find-status row stays for no-match feedback.
             const stopRow = document.createElement("div");
             stopRow.className = "section btn-row stop-row";
             const stopBtn = this._makeButton("stop-btn", "Stop");
             stopBtn.addEventListener("click", () => this._onStop());
-            const findBtn = this._makeButton("find-btn", "Find Song");
-            findBtn.addEventListener("click", () => this._onFind());
-            stopRow.append(stopBtn, findBtn);
-            // --- Pause / Resume (playlist playback only) ---
-            const pauseRow = document.createElement("div");
-            pauseRow.className = "section btn-row pause-row";
-            const pauseBtn = this._makeButton("pause-btn", "Pause");
-            pauseBtn.addEventListener("click", () => this._onPause());
-            const resumeBtn = this._makeButton("resume-btn", "Resume");
-            resumeBtn.addEventListener("click", () => this._onResume());
-            pauseRow.append(pauseBtn, resumeBtn);
+            stopRow.append(stopBtn);
             const findStatus = document.createElement("div");
             findStatus.className = "find-status hidden";
             findStatus.setAttribute("role", "status");
@@ -156,7 +150,7 @@
             const speakersSelect = this._makeDropdown("speakers-select");
             speakersSelect.addEventListener("change", () => this._onDropdownChange("select", "speaker_group", speakersSelect.value));
             speakersSection.append(this._makeSectionLabel("Speakers"), speakersSelect);
-            content.append(nowPlaying, mediaSection, speakersSection, playRow, stopRow, pauseRow, findStatus, likeSection);
+            content.append(nowPlaying, mediaSection, speakersSection, playRow, stopRow, findStatus, likeSection);
             card.append(content);
             shadow.append(style, card);
             this._rendered = true;
@@ -236,16 +230,9 @@
             // is built from media metadata an idle player can retain after its queue
             // finishes. Older integrations without the attribute fall back to the
             // state string. (Computed above, before the Now Playing entry.)
-            this._updateActionButton(".play-btn", ["play_music"], this._playing, "Play", "Playing…", !nothingPlaying);
+            this._updateTransportButton(nothingPlaying);
             this._updateActionButton(".skip-btn", ["skip_song", "next_track"], this._skipping, "Skip", "Skipping…", nothingPlaying);
             this._updateActionButton(".stop-btn", ["stop_music"], this._stopping, "Stop", "Stop", nothingPlaying);
-            // Pause/Resume are only meaningful for playlist playback. The backing
-            // button entities go unavailable unless a playlist was started (radio or
-            // nothing) — and, of the pair, whichever does not match the integration's
-            // paused/not-paused state — and the card additionally grays them when the
-            // now-playing sensor reports nothing.
-            this._updateActionButton(".pause-btn", ["pause_music"], this._pausing, "Pause", "Pausing…", nothingPlaying);
-            this._updateActionButton(".resume-btn", ["resume_music"], this._resuming, "Resume", "Resuming…", nothingPlaying);
             // Like candidates
             const likeCandidate = this._entity("select", "like_candidate")?.state;
             const currentOption = likeCandidate?.state;
@@ -291,21 +278,9 @@
                     li.setAttribute("aria-selected", String(selected));
                 });
             }
-            // Find button + no-match feedback
-            const findBtn = this.shadowRoot.querySelector(".find-btn");
+            // No-match feedback (the ♥ buttons drive the search now that the Find
+            // Song button is gone).
             const findStatus = this.shadowRoot.querySelector(".find-status");
-            if (findBtn) {
-                const findState = this._entity("button", "find_like_matches")?.state.state;
-                // Find Song (no arguments) searches for the now-playing track, so it
-                // also grays when nothing is playing. The history ♥ buttons pass an
-                // explicit artist/title and stay usable regardless (issue #27).
-                findBtn.disabled =
-                    this._searching ||
-                        nothingPlaying ||
-                        findState === "unavailable" ||
-                        findState === undefined;
-                findBtn.textContent = this._searching ? "Searching…" : "Find Song";
-            }
             if (findStatus) {
                 const showNoMatches = this._noMatches && !this._searching && !hasCandidates;
                 findStatus.classList.toggle("hidden", !showNoMatches);
@@ -439,6 +414,43 @@
             else {
                 dropdown.selectedIndex = -1;
             }
+        }
+        // The single Play button doubles as Pause and Resume (issue #39). It shows
+        // whichever transport applies to the current playback state and delegates to
+        // that action's availability rules: Resume while the integration reports a
+        // paused playlist (its resume_music button is available), Pause while a
+        // playlist plays un-paused (pause_music available), and Play otherwise —
+        // including radio, which grays Play because something is playing. The
+        // resume/pause backing entities are mutually exclusive per playback state
+        // (PM-8), so at most one wins and the button never presents both actions.
+        _updateTransportButton(nothingPlaying) {
+            let mode = "play";
+            if (!nothingPlaying) {
+                if (this._backingAvailable("resume_music"))
+                    mode = "resume";
+                else if (this._backingAvailable("pause_music"))
+                    mode = "pause";
+            }
+            this._transportMode = mode;
+            const specs = {
+                play: { suffix: "play_music", inFlight: this._playing, label: "Play", busy: "Playing…", disabled: !nothingPlaying },
+                pause: { suffix: "pause_music", inFlight: this._pausing, label: "Pause", busy: "Pausing…", disabled: nothingPlaying },
+                resume: { suffix: "resume_music", inFlight: this._resuming, label: "Resume", busy: "Resuming…", disabled: nothingPlaying },
+            };
+            const spec = specs[mode];
+            this._updateActionButton(".play-btn", [spec.suffix], spec.inFlight, spec.label, spec.busy, spec.disabled);
+        }
+        _backingAvailable(suffix) {
+            const state = this._entity("button", suffix)?.state.state;
+            return state !== undefined && state !== "unavailable";
+        }
+        _onTransport() {
+            if (this._transportMode === "pause")
+                void this._onPause();
+            else if (this._transportMode === "resume")
+                void this._onResume();
+            else
+                void this._onPlay();
         }
         _updateActionButton(selector, buttonSuffixes, inFlight, label, inFlightLabel, forceDisabled = false) {
             if (!this.shadowRoot)
