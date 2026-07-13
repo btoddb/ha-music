@@ -74,6 +74,12 @@
       "stop_music": {
         "name": "Stop music"
       },
+      "pause_music": {
+        "name": "Pause music"
+      },
+      "resume_music": {
+        "name": "Resume music"
+      },
       "find_like_matches": {
         "name": "Find like matches"
       },

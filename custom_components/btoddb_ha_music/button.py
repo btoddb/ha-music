@@ -50,6 +50,24 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
             ),
             MusicActionButton(
                 controller,
+                "pause_music",
+                "pause_music",
+                controller.async_pause_music,
+                lambda: (
+                    bool(controller.speakers) and controller.playing_kind == "playlist"
+                ),
+            ),
+            MusicActionButton(
+                controller,
+                "resume_music",
+                "resume_music",
+                controller.async_resume_music,
+                lambda: (
+                    bool(controller.speakers) and controller.playing_kind == "playlist"
+                ),
+            ),
+            MusicActionButton(
+                controller,
                 "find_like_matches",
                 "find_like_matches",
                 controller.async_find_like_matches,

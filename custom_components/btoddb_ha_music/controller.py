@@ -15,6 +15,8 @@ from homeassistant.components.media_player.const import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     SERVICE_MEDIA_NEXT_TRACK,
+    SERVICE_MEDIA_PAUSE,
+    SERVICE_MEDIA_PLAY,
     SERVICE_MEDIA_STOP,
     SERVICE_SHUFFLE_SET,
     STATE_UNAVAILABLE,
@@ -88,6 +90,10 @@ class MusicController:
         self.like_playlist_id = _normalize_playlist_id(data.get(CONF_LIKE_PLAYLIST_ID))
         self.like_candidates: list[LikeCandidate] = []
         self.selected_like_candidate: LikeCandidate | None = None
+        # Kind of the last media this controller started ("radio_station" or
+        # "playlist"), cleared on stop. Pause/resume only make sense for
+        # playlists, so their buttons key their availability off this.
+        self.playing_kind: str | None = None
         self._listeners: list[SelectionListener] = []
 
     @property
@@ -184,6 +190,7 @@ class MusicController:
         )
         await self._async_set_shuffle(entity_ids, shuffle=False)
         await self._async_play_media(entity_ids, media_id)
+        self._set_playing_kind("radio_station")
 
     async def async_shuffle_play_playlist(
         self, *, playlist: str | None = None, speakers: str | list[str] | None = None
@@ -199,6 +206,7 @@ class MusicController:
         )
         await self._async_set_shuffle(entity_ids, shuffle=True)
         await self._async_play_media(entity_ids, media_id)
+        self._set_playing_kind("playlist")
 
     async def async_play_music(
         self, *, media: str | None = None, speakers: str | list[str] | None = None
@@ -214,6 +222,7 @@ class MusicController:
         media_id, shuffle = self._resolve_music(media)
         await self._async_set_shuffle(entity_ids, shuffle=shuffle)
         await self._async_play_media(entity_ids, media_id)
+        self._set_playing_kind("playlist" if shuffle else "radio_station")
 
     def _resolve_music(self, requested: str | None) -> tuple[str, bool]:
         """Resolve a combined media label, mapping name, or raw URI.
@@ -273,6 +282,7 @@ class MusicController:
         """
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
+        self._set_playing_kind(None)
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -281,6 +291,54 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
+
+    async def async_pause_music(
+        self, *, speakers: str | list[str] | None = None
+    ) -> None:
+        """Pause playback on the actively-playing configured speakers.
+
+        Only meaningful while a playlist is playing; radio streams cannot be
+        meaningfully paused/resumed, so the backing button entity is
+        unavailable unless the controller last started a playlist.
+        """
+
+        entity_ids = self._resolve_active_targets(speakers=speakers)
+        if not entity_ids:
+            return
+        await self.hass.services.async_call(
+            MEDIA_PLAYER_DOMAIN,
+            SERVICE_MEDIA_PAUSE,
+            {"entity_id": entity_ids},
+            blocking=True,
+        )
+
+    async def async_resume_music(
+        self, *, speakers: str | list[str] | None = None
+    ) -> None:
+        """Resume paused playback on the active configured speakers.
+
+        Paused players are still "active" targets (paused is not an idle
+        state), so the same target resolution as stop/pause applies.
+        """
+
+        entity_ids = self._resolve_active_targets(speakers=speakers)
+        if not entity_ids:
+            return
+        await self.hass.services.async_call(
+            MEDIA_PLAYER_DOMAIN,
+            SERVICE_MEDIA_PLAY,
+            {"entity_id": entity_ids},
+            blocking=True,
+        )
+
+    @callback
+    def _set_playing_kind(self, kind: str | None) -> None:
+        """Record the kind of media playback just started (or cleared)."""
+
+        if self.playing_kind == kind:
+            return
+        self.playing_kind = kind
+        self._notify_listeners()
 
     async def async_next_track(
         self, *, speakers: str | list[str] | None = None

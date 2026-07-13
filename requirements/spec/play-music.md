@@ -22,3 +22,15 @@ backward compatibility.
   `playlist`.
 - **constraint PM-5** Both the filter and the media selection are restored
   across Home Assistant restarts when still valid.
+- **constraint PM-6** `btoddb_ha_music.pause_music` and `resume_music`
+  (issue #26) call `media_player.media_pause` / `media_player.media_play` on
+  the actively-playing configured speakers, using the same active-target
+  resolution as stop/skip (paused players count as active so Resume reaches
+  them; explicit `speakers` targets pass through unfiltered).
+- **constraint PM-7** The controller records the kind of media it last
+  started (`playing_kind`: radio station or playlist), clearing it on
+  `stop_music`. `button.<prefix>_pause_music` and
+  `button.<prefix>_resume_music` are available only while `playing_kind` is
+  playlist, because radio streams cannot be meaningfully paused and resumed.
+  The kind is not persisted across Home Assistant restarts, so both buttons
+  start unavailable until the next play action.

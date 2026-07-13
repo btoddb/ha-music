@@ -30,8 +30,10 @@ from .const import (
     SERVICE_CONFIRM_LIKE,
     SERVICE_FIND_LIKE_MATCHES,
     SERVICE_NEXT_TRACK,
+    SERVICE_PAUSE_MUSIC,
     SERVICE_PLAY_MUSIC,
     SERVICE_PLAY_RADIO_STATION,
+    SERVICE_RESUME_MUSIC,
     SERVICE_SHUFFLE_PLAY_PLAYLIST,
     SERVICE_STOP_MUSIC,
 )
@@ -184,6 +186,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
         controller = _controller_from_call(hass, call)
         await controller.async_stop_music(speakers=call.data.get(ATTR_SPEAKERS))
 
+    async def pause_music(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_pause_music(speakers=call.data.get(ATTR_SPEAKERS))
+
+    async def resume_music(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_resume_music(speakers=call.data.get(ATTR_SPEAKERS))
+
     async def find_like_matches(call: ServiceCall) -> None:
         controller = _controller_from_call(hass, call)
         await controller.async_find_like_matches()
@@ -250,6 +260,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
+        SERVICE_PAUSE_MUSIC,
+        pause_music,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
+                vol.Optional(ATTR_SPEAKERS): speaker_value,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESUME_MUSIC,
+        resume_music,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
+                vol.Optional(ATTR_SPEAKERS): speaker_value,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
         SERVICE_FIND_LIKE_MATCHES,
         find_like_matches,
         schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
@@ -289,6 +321,8 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_PLAY_RADIO_STATION,
         SERVICE_SHUFFLE_PLAY_PLAYLIST,
         SERVICE_STOP_MUSIC,
+        SERVICE_PAUSE_MUSIC,
+        SERVICE_RESUME_MUSIC,
         SERVICE_FIND_LIKE_MATCHES,
         SERVICE_CONFIRM_LIKE,
         SERVICE_CANCEL_LIKE,

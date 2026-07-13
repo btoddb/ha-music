@@ -9,8 +9,9 @@ selection.
   header; a Now Playing section (artist and song from
   `sensor.<prefix>_now_playing`); a music-source dropdown backed by the
   combined media select; a speakers dropdown backed by the speaker-group
-  select; a Play/Skip button row; a Stop/Find Song button row; and the
-  like-candidate flow (hidden until Find Song returns matches).
+  select; a Play/Skip button row; a Stop/Find Song button row; a Pause/Resume
+  button row; and the like-candidate flow (hidden until Find Song returns
+  matches).
 - **constraint CARD-2** Entity resolution tries
   `<domain>.<entity_prefix>_<suffix>` first, then falls back to any entity in
   the domain whose id ends with `_<suffix>`, preferring ids that share the
@@ -34,3 +35,10 @@ selection.
   `options`), clicking a candidate selects it, and Like/Cancel call
   `confirm_like`/`cancel_like` with availability mirroring the backing button
   entities.
+- **constraint CARD-6** Pause and Resume call the `btoddb_ha_music.pause_music`
+  and `resume_music` services (issue #26). Each is disabled while its call is
+  in flight, when its backing button entity is missing or unavailable (the
+  integration marks both unavailable unless a playlist is the active media
+  kind — see PM-6), or when the now-playing sensor's state is missing,
+  `unknown`, or `unavailable` (covers a playlist queue that finished on its
+  own), so both gray out while a radio station or nothing is playing.
