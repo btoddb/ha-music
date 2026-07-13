@@ -172,12 +172,23 @@ describe(CARD_TYPE, () => {
   });
 
   it("play, skip, and stop buttons call the integration services", async () => {
-    const hass = makeHass();
+    // Play is only clickable while nothing is playing; skip/stop only while
+    // something is (issue #36), so the sensor flips between the two clicks.
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": { state: "unknown", attributes: {} },
+    });
     const card = makeCard(hass);
     const root = shadow(card);
 
     root.querySelector<HTMLButtonElement>(".play-btn")!.click();
     await flush();
+
+    hass.states["sensor.btoddb_ha_music_now_playing"] = {
+      state: "playing",
+      attributes: { artist: "Neko Case", title: "Hold On, Hold On" },
+    };
+    card.hass = hass;
+
     root.querySelector<HTMLButtonElement>(".skip-btn")!.click();
     await flush();
     root.querySelector<HTMLButtonElement>(".stop-btn")!.click();
@@ -188,6 +199,62 @@ describe(CARD_TYPE, () => {
       "btoddb_ha_music.next_track",
       "btoddb_ha_music.stop_music",
     ]);
+  });
+
+  it("grays Play while a track is playing and enables it when nothing is", () => {
+    const playing = makeCard(makeHass());
+    expect(shadow(playing).querySelector<HTMLButtonElement>(".play-btn")!.disabled).toBe(true);
+
+    const idle = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": { state: "unknown", attributes: {} },
+      })
+    );
+    expect(shadow(idle).querySelector<HTMLButtonElement>(".play-btn")!.disabled).toBe(false);
+  });
+
+  it("grays Skip, Stop, and Find Song when nothing is playing", () => {
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": { state: "unknown", attributes: {} },
+      })
+    );
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".skip-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".stop-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(true);
+  });
+
+  it("enables Skip, Stop, and Find Song while a track is playing", () => {
+    const card = makeCard(makeHass());
+    const root = shadow(card);
+
+    expect(root.querySelector<HTMLButtonElement>(".skip-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".stop-btn")!.disabled).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(false);
+  });
+
+  it("keeps history like buttons usable when nothing is playing", () => {
+    // History entries carry their own artist/title, so liking a song that
+    // already stopped playing must keep working (issue #27).
+    const card = makeCard(
+      makeHass({
+        "sensor.btoddb_ha_music_now_playing": {
+          state: "unknown",
+          attributes: {
+            history: [
+              { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+            ],
+          },
+        },
+      })
+    );
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+
+    expect(root.querySelector<HTMLButtonElement>(".find-btn")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(".history-like-btn")!.disabled).toBe(false);
   });
 
   it("disables transport buttons whose backing button entity is unavailable", () => {

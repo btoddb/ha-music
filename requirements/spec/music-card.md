@@ -24,7 +24,14 @@ selection.
   explicit `media`/`speakers`, so the integration's current selections apply);
   each is disabled while its call is in flight or when its backing button
   entity is missing or unavailable. Skip accepts either the `_skip_song` or
-  legacy `_next_track` button entity id.
+  legacy `_next_track` button entity id. The card additionally grays the
+  buttons that are not applicable (issue #36): Play while the now-playing
+  sensor reports a track, and Skip/Stop while it reports nothing (state
+  missing, `unknown`, or `unavailable`). The sensor — not the integration's
+  `playing_kind` — carries this signal because it reflects real player
+  state, so the graying self-heals when a playlist queue finishes on its own
+  or HA restarts mid-playback. Skip's playlist-only availability comes from
+  the backing entity (PM-8).
 - **constraint CARD-4** The music and speakers dropdowns list the backing
   select's `options`, reflect its current state, and call
   `select.select_option` against the resolved entity id on change. A dropdown
@@ -34,14 +41,18 @@ selection.
   like-candidate select's structured `candidates` attribute (falling back to
   `options`), clicking a candidate selects it, and Like/Cancel call
   `confirm_like`/`cancel_like` with availability mirroring the backing button
-  entities.
+  entities. Find Song (which searches for the now-playing track) is
+  additionally grayed while the now-playing sensor reports nothing
+  (issue #36).
 - **constraint CARD-6** Pause and Resume call the `btoddb_ha_music.pause_music`
   and `resume_music` services (issue #26). Each is disabled while its call is
   in flight, when its backing button entity is missing or unavailable (the
   integration marks both unavailable unless a playlist is the active media
-  kind — see PM-6), or when the now-playing sensor's state is missing,
-  `unknown`, or `unavailable` (covers a playlist queue that finished on its
-  own), so both gray out while a radio station or nothing is playing.
+  kind, and of the pair only the one matching the paused state stays
+  available — see PM-7/PM-8), or when the now-playing sensor's state is
+  missing, `unknown`, or `unavailable` (covers a playlist queue that finished
+  on its own), so both gray out while a radio station or nothing is playing
+  and they never present as clickable together.
 - **constraint CARD-7** The Now Playing section also renders a "History"
   title (always visible) with a chevron that expands/hides the history list
   (issue #27, collapsed by default). The list renders the now-playing
@@ -49,5 +60,8 @@ selection.
   integration — see PH-1/PH-3), showing artist and song per entry plus a
   like (♥) button that calls `find_like_matches` with that entry's `artist`
   and `title`, feeding the existing like-candidate flow (CARD-5). The like
-  buttons mirror the Find Song button's availability and in-flight state,
-  and an empty history shows a "No songs played yet" row.
+  buttons mirror the backing `find_like_matches` button entity's availability
+  and the card's in-flight state — but not Find Song's nothing-playing
+  graying (CARD-5), because history entries carry their own artist/title and
+  must stay likable after playback stops. An empty history shows a "No songs
+  played yet" row.

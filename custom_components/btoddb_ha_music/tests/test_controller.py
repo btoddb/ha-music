@@ -1369,3 +1369,50 @@ def test_find_like_matches_rejects_partial_artist_title() -> None:
         asyncio.run(controller.async_find_like_matches(artist="Artist"))
     with pytest.raises(HomeAssistantError):
         asyncio.run(controller.async_find_like_matches(title="Song"))
+
+
+def test_is_paused_tracks_pause_resume_lifecycle() -> None:
+    """Pause sets is_paused; resume, stop, and new playback clear it."""
+
+    states = {"media_player.office": _FakeState({}, state="playing")}
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    assert controller.is_paused is False
+
+    asyncio.run(controller.async_pause_music())
+    assert controller.is_paused is True
+
+    asyncio.run(controller.async_resume_music())
+    assert controller.is_paused is False
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_stop_music())
+    assert controller.is_paused is False
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_shuffle_play_playlist(playlist="Dinner"))
+    assert controller.is_paused is False
+
+
+def test_paused_state_change_notifies_listeners() -> None:
+    """Paused/not-paused flips notify listeners so button availability refreshes."""
+
+    states = {"media_player.office": _FakeState({}, state="playing")}
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    notified = []
+    controller.async_add_listener(lambda: notified.append(True))
+
+    asyncio.run(controller.async_pause_music())
+    assert notified
+
+    notified.clear()
+    asyncio.run(controller.async_resume_music())
+    assert notified
+
+    # Clearing an already-clear paused state is not a flip and stays silent.
+    notified.clear()
+    controller._set_paused_entity_ids([])  # noqa: SLF001
+    assert not notified
