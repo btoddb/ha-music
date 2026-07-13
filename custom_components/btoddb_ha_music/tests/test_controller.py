@@ -1344,6 +1344,77 @@ def test_record_now_playing_pause_does_not_reset_or_duplicate() -> None:
     ]
 
 
+def test_now_playing_keeps_paused_track_when_metadata_degrades() -> None:
+    """A paused (idle) player that drops its artist still reads as the paused track.
+
+    Music Assistant reports a paused player as "idle" and can drop part of its
+    media metadata; without this the card would show a second partial-metadata
+    now-playing entry that no longer matches the paused track (issue #40).
+    """
+
+    states = {
+        "media_player.office": _FakeState(
+            {ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+            state="playing",
+        )
+    }
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+    controller.record_now_playing(controller.now_playing(), playback_active=True)
+
+    # Pause: MA reports the player idle and drops the artist attribute.
+    asyncio.run(controller.async_pause_music())
+    states["media_player.office"].state = "idle"
+    states["media_player.office"].attributes = {ATTR_MEDIA_TITLE: "Song"}
+
+    paused = controller.now_playing()
+    assert (paused.artist, paused.title) == ("Artist", "Song")
+
+
+def test_pause_resume_does_not_duplicate_history() -> None:
+    """Pausing then resuming a playlist track records the play only once (issue #40).
+
+    The degraded metadata a paused (idle) player reports must not poison the
+    start-detection lifecycle and re-insert the track on resume.
+    """
+
+    states = {
+        "media_player.office": _FakeState(
+            {ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+            state="playing",
+        )
+    }
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    def refresh() -> None:
+        controller.record_now_playing(
+            controller.now_playing(), playback_active=controller.playback_active()
+        )
+
+    # Playing.
+    refresh()
+
+    # Pause -> MA reports idle and drops the artist.
+    asyncio.run(controller.async_pause_music())
+    states["media_player.office"].state = "idle"
+    states["media_player.office"].attributes = {ATTR_MEDIA_TITLE: "Song"}
+    refresh()
+
+    # Resume -> metadata returns.
+    asyncio.run(controller.async_resume_music())
+    states["media_player.office"].state = "playing"
+    states["media_player.office"].attributes = {
+        ATTR_MEDIA_ARTIST: "Artist",
+        ATTR_MEDIA_TITLE: "Song",
+    }
+    refresh()
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist", "Song")
+    ]
+
+
 def test_record_now_playing_ignores_unchanged_track() -> None:
     """Repeated updates for the same track add nothing to the history."""
 

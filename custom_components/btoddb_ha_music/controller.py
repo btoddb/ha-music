@@ -486,11 +486,20 @@ class MusicController:
         )
 
     def now_playing(self) -> NowPlaying:
-        """Return current media metadata for the selected speaker option."""
+        """Return current media metadata for the selected speaker option.
+
+        While this controller holds a pause, prefer the track it paused when
+        the live metadata reads as degraded. Music Assistant reports a paused
+        player as "idle" and drops part of its media metadata (typically the
+        artist), which would otherwise surface as a second, partial-metadata
+        "now playing" that no longer matches the paused track in the history
+        (issue #40 follow-up) and re-records a duplicate play on resume.
+        """
 
         if self.selected_speakers is None:
             return NowPlaying("unknown", None, "unknown", "unknown", None)
 
+        resolved = NowPlaying("unknown", None, "unknown", "unknown", None)
         for entity_id in self._resolve_speakers(self.selected_speakers):
             state = self.hass.states.get(entity_id)
             if state is None or state.state == STATE_UNAVAILABLE:
@@ -500,11 +509,18 @@ class MusicController:
             title = state.attributes.get(ATTR_MEDIA_TITLE)
             album = state.attributes.get(ATTR_MEDIA_ALBUM_NAME)
             display = " - ".join(part for part in (artist, title) if part) or "unknown"
-            return NowPlaying(
+            resolved = NowPlaying(
                 display, entity_id, artist or "unknown", title or "unknown", album
             )
+            break
 
-        return NowPlaying("unknown", None, "unknown", "unknown", None)
+        if (
+            self.is_paused
+            and self._last_now_playing is not None
+            and (resolved.artist == "unknown" or resolved.title == "unknown")
+        ):
+            return self._last_now_playing
+        return resolved
 
     @callback
     def record_now_playing(
