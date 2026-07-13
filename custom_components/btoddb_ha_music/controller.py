@@ -116,6 +116,12 @@ class MusicController:
         self._listeners: list[SelectionListener] = []
 
     @property
+    def is_paused(self) -> bool:
+        """Return whether the last pause_music call is still in effect."""
+
+        return bool(self._paused_entity_ids)
+
+    @property
     def like_enabled(self) -> bool:
         """Return whether a SpotifyPlus entity is configured for liking tracks."""
 
@@ -289,7 +295,7 @@ class MusicController:
             },
             blocking=True,
         )
-        self._paused_entity_ids = []
+        self._set_paused_entity_ids([])
 
     async def async_stop_music(
         self, *, speakers: str | list[str] | None = None
@@ -303,7 +309,7 @@ class MusicController:
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
         self._set_playing_kind(None)
-        self._paused_entity_ids = []
+        self._set_paused_entity_ids([])
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -334,7 +340,7 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
-        self._paused_entity_ids = entity_ids
+        self._set_paused_entity_ids(entity_ids)
 
     async def async_resume_music(
         self, *, speakers: str | list[str] | None = None
@@ -362,7 +368,7 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
-        self._paused_entity_ids = []
+        self._set_paused_entity_ids([])
 
     @callback
     def _set_playing_kind(self, kind: str | None) -> None:
@@ -372,6 +378,19 @@ class MusicController:
             return
         self.playing_kind = kind
         self._notify_listeners()
+
+    @callback
+    def _set_paused_entity_ids(self, entity_ids: list[str]) -> None:
+        """Record the players the last pause call paused (or clear them).
+
+        Pause/Resume button availability keys off ``is_paused``, so listeners
+        are notified whenever the paused/not-paused state flips.
+        """
+
+        was_paused = self.is_paused
+        self._paused_entity_ids = entity_ids
+        if self.is_paused != was_paused:
+            self._notify_listeners()
 
     async def async_next_track(
         self, *, speakers: str | list[str] | None = None
@@ -447,6 +466,23 @@ class MusicController:
             if state is not None and state.state not in self._INACTIVE_STATES:
                 active.append(entity_id)
         return active
+
+    def playback_active(self) -> bool:
+        """Return whether any configured speaker is actively playing.
+
+        This is the "is anything playing" signal for button applicability
+        (issue #36): it derives from the players' actual states, not from
+        retained media metadata, because an idle player can keep its last
+        artist/title after a queue finishes. Music Assistant reports paused
+        players as "idle", so a pause this controller performed counts as
+        active — Resume must stay applicable.
+        """
+
+        if self.is_paused:
+            return True
+        return bool(
+            self._filter_active_speakers(sorted(self.all_media_player_entity_ids))
+        )
 
     def now_playing(self) -> NowPlaying:
         """Return current media metadata for the selected speaker option."""

@@ -36,6 +36,7 @@ class NowPlayingSensor(MusicEntity, SensorEntity):
         self._controller.record_now_playing(now_playing)
         self._attr_native_value = now_playing.state
         self._attr_extra_state_attributes = {
+            "playback_active": self._controller.playback_active(),
             "player_entity_id": now_playing.player_entity_id,
             "artist": now_playing.artist,
             "title": now_playing.title,

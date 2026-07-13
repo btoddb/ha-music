@@ -45,3 +45,21 @@ backward compatibility.
   playlist, because radio streams cannot be meaningfully paused and resumed.
   The kind is not persisted across Home Assistant restarts, so both buttons
   start unavailable until the next play action.
+- **constraint PM-8** Buttons stay unavailable while not applicable
+  (issue #36): `button.<prefix>_next_track` is available only while
+  `playing_kind` is playlist (a radio stream has no next track, and it shares
+  PM-7's restart caveat), and of the pause/resume pair only the one matching
+  the paused state applies — pause while not paused, resume while paused. The
+  paused state (`is_paused`) is the PM-6 remembered-pause-targets flag, so it
+  flips on `pause_music` and clears on resume, stop, or new playback, and
+  every flip notifies listeners so the button entities re-render.
+  `button.<prefix>_play_music` and `button.<prefix>_stop_music` availability
+  is deliberately unchanged (configured speakers/media only): `playing_kind`
+  can go stale when a queue finishes on its own or HA restarts, and keying
+  Play/Stop off it could permanently gray them; the card grays those from
+  live state instead (CARD-3). For that, the controller exposes
+  `playback_active` — true while any configured speaker is in an active
+  player state or while `is_paused` holds (MA reports paused players as
+  `idle`) — published as the now-playing sensor's `playback_active`
+  attribute. It deliberately ignores media metadata, which an idle player
+  can retain after its queue finishes.

@@ -299,25 +299,52 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     this._updateDropdown(".speakers-select", this._entity("select", "speaker_group"));
 
     // Transport buttons — availability mirrors the integration's button
-    // entities, layered with this card's own in-flight state.
-    this._updateActionButton(".play-btn", ["play_music"], this._playing, "Play", "Playing…");
+    // entities, layered with this card's own in-flight state and the
+    // now-playing sensor (issue #36): Play grays while something is playing,
+    // and the play-dependent buttons gray when nothing is. The sensor's
+    // playback_active attribute carries the "is anything playing" signal —
+    // it derives from real player states (with the integration's paused
+    // players counting as active), not from the sensor's state string, which
+    // is built from media metadata an idle player can retain after its queue
+    // finishes. Older integrations without the attribute fall back to the
+    // state string.
+    const playbackActive = nowPlaying?.attributes?.playback_active;
+    const nothingPlaying =
+      playbackActive === undefined
+        ? nowPlaying === undefined ||
+          nowPlaying.state === "unknown" ||
+          nowPlaying.state === "unavailable"
+        : !playbackActive;
+    this._updateActionButton(
+      ".play-btn",
+      ["play_music"],
+      this._playing,
+      "Play",
+      "Playing…",
+      !nothingPlaying
+    );
     this._updateActionButton(
       ".skip-btn",
       ["skip_song", "next_track"],
       this._skipping,
       "Skip",
-      "Skipping…"
+      "Skipping…",
+      nothingPlaying
     );
-    this._updateActionButton(".stop-btn", ["stop_music"], this._stopping, "Stop", "Stop");
+    this._updateActionButton(
+      ".stop-btn",
+      ["stop_music"],
+      this._stopping,
+      "Stop",
+      "Stop",
+      nothingPlaying
+    );
 
     // Pause/Resume are only meaningful for playlist playback. The backing
     // button entities go unavailable unless a playlist was started (radio or
-    // nothing), and the card additionally grays them when the now-playing
-    // sensor reports nothing (e.g. the playlist queue finished on its own).
-    const nothingPlaying =
-      nowPlaying === undefined ||
-      nowPlaying.state === "unknown" ||
-      nowPlaying.state === "unavailable";
+    // nothing) — and, of the pair, whichever does not match the integration's
+    // paused/not-paused state — and the card additionally grays them when the
+    // now-playing sensor reports nothing.
     this._updateActionButton(
       ".pause-btn",
       ["pause_music"],
@@ -400,8 +427,14 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const findStatus = this.shadowRoot.querySelector<HTMLElement>(".find-status");
     if (findBtn) {
       const findState = this._entity("button", "find_like_matches")?.state.state;
+      // Find Song (no arguments) searches for the now-playing track, so it
+      // also grays when nothing is playing. The history ♥ buttons pass an
+      // explicit artist/title and stay usable regardless (issue #27).
       findBtn.disabled =
-        this._searching || findState === "unavailable" || findState === undefined;
+        this._searching ||
+        nothingPlaying ||
+        findState === "unavailable" ||
+        findState === undefined;
       findBtn.textContent = this._searching ? "Searching…" : "Find Song";
     }
     if (findStatus) {
@@ -480,7 +513,9 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     }
 
     // Liking from history goes through find_like_matches, so the hearts
-    // mirror the Find Song button's availability and in-flight state.
+    // mirror the backing button entity's availability and the card's
+    // in-flight state — but not the Find Song button's nothing-playing
+    // graying, since history entries carry their own artist/title.
     const findState = this._entity("button", "find_like_matches")?.state.state;
     const likeDisabled =
       this._searching || findState === "unavailable" || findState === undefined;

@@ -54,7 +54,9 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
                 "pause_music",
                 controller.async_pause_music,
                 lambda: (
-                    bool(controller.speakers) and controller.playing_kind == "playlist"
+                    bool(controller.speakers)
+                    and controller.playing_kind == "playlist"
+                    and not controller.is_paused
                 ),
             ),
             MusicActionButton(
@@ -63,7 +65,9 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
                 "resume_music",
                 controller.async_resume_music,
                 lambda: (
-                    bool(controller.speakers) and controller.playing_kind == "playlist"
+                    bool(controller.speakers)
+                    and controller.playing_kind == "playlist"
+                    and controller.is_paused
                 ),
             ),
             MusicActionButton(
@@ -95,7 +99,12 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
                 "next_track",
                 "next_track",
                 controller.async_next_track,
-                lambda: bool(controller.speakers),
+                # Skipping only makes sense within a playlist queue; a radio
+                # stream has no next track. Like pause/resume, the kind is not
+                # persisted, so this starts unavailable after a restart.
+                lambda: (
+                    bool(controller.speakers) and controller.playing_kind == "playlist"
+                ),
             ),
         ]
     )

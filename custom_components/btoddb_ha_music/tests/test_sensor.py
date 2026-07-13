@@ -85,3 +85,30 @@ def test_sensor_publishes_history_on_track_transitions() -> None:
         assert set(track) == {"artist", "title", "album", "played_at"}
         assert track["played_at"]
     assert sensor.extra_state_attributes["title"] == "Song C"
+
+
+def test_sensor_playback_active_reflects_player_state_not_metadata() -> None:
+    """An idle player retaining stale artist/title publishes playback_active=False."""
+
+    sensor, states = _sensor_fixture()
+    assert sensor.extra_state_attributes["playback_active"] is True
+
+    # Queue finished on its own: the player goes idle but keeps its metadata.
+    states["media_player.office"].state = "idle"
+    sensor._update_now_playing()
+
+    assert sensor.native_value == "Artist A - Song A"
+    assert sensor.extra_state_attributes["playback_active"] is False
+
+
+def test_sensor_playback_active_true_while_paused_by_the_integration() -> None:
+    """A controller pause keeps playback_active True despite MA's idle state."""
+
+    sensor, states = _sensor_fixture()
+    controller = sensor._controller
+
+    controller._set_paused_entity_ids(["media_player.office"])
+    states["media_player.office"].state = "idle"
+    sensor._update_now_playing()
+
+    assert sensor.extra_state_attributes["playback_active"] is True
