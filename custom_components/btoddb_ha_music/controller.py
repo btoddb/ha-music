@@ -97,6 +97,11 @@ class MusicController:
         # "playlist"), cleared on stop. Pause/resume only make sense for
         # playlists, so their buttons key their availability off this.
         self.playing_kind: str | None = None
+        # Players the last pause_music call paused. Music Assistant reports
+        # them as "idle" afterwards, so resume_music cannot re-discover them
+        # via the active-state filter. Cleared by resume, stop, and new
+        # playback; not persisted across restarts.
+        self._paused_entity_ids: list[str] = []
         self._listeners: list[SelectionListener] = []
 
     @property
@@ -273,6 +278,7 @@ class MusicController:
             },
             blocking=True,
         )
+        self._paused_entity_ids = []
 
     async def async_stop_music(
         self, *, speakers: str | list[str] | None = None
@@ -286,6 +292,7 @@ class MusicController:
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
         self._set_playing_kind(None)
+        self._paused_entity_ids = []
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -316,19 +323,26 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
+        self._paused_entity_ids = entity_ids
 
     async def async_resume_music(
         self, *, speakers: str | list[str] | None = None
     ) -> None:
-        """Resume paused playback on the active configured speakers.
+        """Resume playback on the players a prior pause_music call paused.
 
-        Paused players are still "active" targets (paused is not an idle
-        state), so the same target resolution as stop/pause applies.
+        Music Assistant reports paused players as "idle", so the
+        active-state target filter cannot find them again; the controller
+        remembers exactly which players it paused and sends media_play back
+        to those. With no remembered pause (or an explicit target), the
+        stop/pause target resolution applies as a fallback.
         """
 
-        entity_ids = self._resolve_active_targets(speakers=speakers)
-        if speakers is None:
-            entity_ids = self._collapse_queue_targets(entity_ids)
+        if speakers is None and self._paused_entity_ids:
+            entity_ids = self._paused_entity_ids
+        else:
+            entity_ids = self._resolve_active_targets(speakers=speakers)
+            if speakers is None:
+                entity_ids = self._collapse_queue_targets(entity_ids)
         if not entity_ids:
             return
         await self.hass.services.async_call(
@@ -337,6 +351,7 @@ class MusicController:
             {"entity_id": entity_ids},
             blocking=True,
         )
+        self._paused_entity_ids = []
 
     @callback
     def _set_playing_kind(self, kind: str | None) -> None:
