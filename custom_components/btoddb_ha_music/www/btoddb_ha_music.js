@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.19
-    const CARD_VERSION = "v0.0.19";
+    // v0.0.20
+    const CARD_VERSION = "v0.0.20";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     class BtoddbHaMusicLikeCard extends HTMLElement {
@@ -13,6 +13,8 @@
         _skipping = false;
         _playing = false;
         _stopping = false;
+        _pausing = false;
+        _resuming = false;
         _noMatches = false;
         _statusMessage = "";
         _lastPlayingKey = "";
@@ -101,6 +103,14 @@
             const findBtn = this._makeButton("find-btn", "Find Song");
             findBtn.addEventListener("click", () => this._onFind());
             stopRow.append(stopBtn, findBtn);
+            // --- Pause / Resume (playlist playback only) ---
+            const pauseRow = document.createElement("div");
+            pauseRow.className = "section btn-row pause-row";
+            const pauseBtn = this._makeButton("pause-btn", "Pause");
+            pauseBtn.addEventListener("click", () => this._onPause());
+            const resumeBtn = this._makeButton("resume-btn", "Resume");
+            resumeBtn.addEventListener("click", () => this._onResume());
+            pauseRow.append(pauseBtn, resumeBtn);
             const findStatus = document.createElement("div");
             findStatus.className = "find-status hidden";
             findStatus.setAttribute("role", "status");
@@ -124,7 +134,7 @@
             const speakersSelect = this._makeDropdown("speakers-select");
             speakersSelect.addEventListener("change", () => this._onDropdownChange("select", "speaker_group", speakersSelect.value));
             speakersSection.append(this._makeSectionLabel("Speakers"), speakersSelect);
-            content.append(nowPlaying, mediaSection, speakersSection, playRow, stopRow, findStatus, likeSection);
+            content.append(nowPlaying, mediaSection, speakersSection, playRow, stopRow, pauseRow, findStatus, likeSection);
             card.append(content);
             shadow.append(style, card);
             this._rendered = true;
@@ -184,6 +194,15 @@
             this._updateActionButton(".play-btn", ["play_music"], this._playing, "Play", "Playing…");
             this._updateActionButton(".skip-btn", ["skip_song", "next_track"], this._skipping, "Skip", "Skipping…");
             this._updateActionButton(".stop-btn", ["stop_music"], this._stopping, "Stop", "Stop");
+            // Pause/Resume are only meaningful for playlist playback. The backing
+            // button entities go unavailable unless a playlist was started (radio or
+            // nothing), and the card additionally grays them when the now-playing
+            // sensor reports nothing (e.g. the playlist queue finished on its own).
+            const nothingPlaying = nowPlaying === undefined ||
+                nowPlaying.state === "unknown" ||
+                nowPlaying.state === "unavailable";
+            this._updateActionButton(".pause-btn", ["pause_music"], this._pausing, "Pause", "Pausing…", nothingPlaying);
+            this._updateActionButton(".resume-btn", ["resume_music"], this._resuming, "Resume", "Resuming…", nothingPlaying);
             // Like candidates
             const likeCandidate = this._entity("select", "like_candidate")?.state;
             const currentOption = likeCandidate?.state;
@@ -278,7 +297,7 @@
                 dropdown.selectedIndex = -1;
             }
         }
-        _updateActionButton(selector, buttonSuffixes, inFlight, label, inFlightLabel) {
+        _updateActionButton(selector, buttonSuffixes, inFlight, label, inFlightLabel, forceDisabled = false) {
             if (!this.shadowRoot)
                 return;
             const btn = this.shadowRoot.querySelector(selector);
@@ -287,7 +306,8 @@
             const backing = buttonSuffixes
                 .map((suffix) => this._entity("button", suffix)?.state.state)
                 .find((state) => state !== undefined);
-            btn.disabled = inFlight || backing === "unavailable" || backing === undefined;
+            btn.disabled =
+                forceDisabled || inFlight || backing === "unavailable" || backing === undefined;
             btn.textContent = inFlight ? inFlightLabel : label;
         }
         _onDropdownChange(domain, suffix, option) {
@@ -317,6 +337,12 @@
         }
         async _onStop() {
             await this._runTransient("stop_music", (v) => (this._stopping = v), () => this._stopping);
+        }
+        async _onPause() {
+            await this._runTransient("pause_music", (v) => (this._pausing = v), () => this._pausing);
+        }
+        async _onResume() {
+            await this._runTransient("resume_music", (v) => (this._resuming = v), () => this._resuming);
         }
         async _onSkip() {
             await this._runTransient("next_track", (v) => (this._skipping = v), () => this._skipping);
