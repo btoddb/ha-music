@@ -306,6 +306,113 @@ describe(CARD_TYPE, () => {
     ]);
   });
 
+  it("renders a collapsed History section that the chevron expands and hides", () => {
+    const card = makeCard(makeHass());
+    const root = shadow(card);
+
+    const toggle = root.querySelector<HTMLButtonElement>(".history-toggle")!;
+    const list = root.querySelector<HTMLElement>(".history-list")!;
+    expect(toggle.querySelector(".history-label")?.textContent).toBe("History");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(list.classList.contains("hidden")).toBe(true);
+
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(list.classList.contains("hidden")).toBe(false);
+
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(list.classList.contains("hidden")).toBe(true);
+  });
+
+  it("renders history entries newest-first from the now-playing sensor", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          history: [
+            { artist: "Artist B", title: "Song B", album: null, played_at: "2026-07-13T02:00:00" },
+            { artist: "Artist A", title: "Song A", album: "Album A", played_at: "2026-07-13T01:00:00" },
+          ],
+        },
+      },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+
+    const entries = Array.from(root.querySelectorAll(".history-entry"));
+    expect(entries.map((li) => li.querySelector(".history-artist")?.textContent)).toEqual([
+      "Artist B",
+      "Artist A",
+    ]);
+    expect(entries.map((li) => li.querySelector(".history-song")?.textContent)).toEqual([
+      "Song B",
+      "Song A",
+    ]);
+    expect(root.querySelector(".history-empty")).toBeNull();
+  });
+
+  it("shows an empty-history row when nothing has played yet", () => {
+    const card = makeCard(makeHass());
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+    expect(root.querySelectorAll(".history-entry").length).toBe(0);
+    expect(root.querySelector(".history-empty")?.textContent).toBe("No songs played yet");
+  });
+
+  it("liking a history entry calls find_like_matches with that artist and title", async () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          history: [
+            { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+          ],
+        },
+      },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+
+    root.querySelector<HTMLButtonElement>(".history-like-btn")!.click();
+    await flush();
+
+    expect(hass.calls).toEqual([
+      {
+        domain: "btoddb_ha_music",
+        service: "find_like_matches",
+        data: { artist: "Artist A", title: "Song A" },
+      },
+    ]);
+  });
+
+  it("disables history like buttons when find_like_matches is unavailable", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          history: [
+            { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+          ],
+        },
+      },
+      "button.btoddb_ha_music_find_like_matches": { state: "unavailable", attributes: {} },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+
+    expect(root.querySelector<HTMLButtonElement>(".history-like-btn")!.disabled).toBe(true);
+  });
+
   it("prefers a direct prefix match over the fallback scan", () => {
     const hass = makeHass({
       "select.btoddb_ha_music_music": {

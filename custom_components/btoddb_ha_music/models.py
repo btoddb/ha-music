@@ -36,6 +36,26 @@ class MediaItem:
 
 
 @dataclass(frozen=True, slots=True)
+class PlayedTrack:
+    """A track that finished playing, kept in the play history."""
+
+    artist: str
+    title: str
+    album: str | None
+    played_at: str  # ISO-8601 UTC timestamp of when the track was recorded
+
+    def as_dict(self) -> dict[str, str | None]:
+        """Serialize for the now-playing sensor's history attribute."""
+
+        return {
+            "artist": self.artist,
+            "title": self.title,
+            "album": self.album,
+            "played_at": self.played_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class LikeCandidate:
     """A Spotify search result eligible to be saved to Liked Songs."""
 

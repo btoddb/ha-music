@@ -20,10 +20,12 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    ATTR_ARTIST,
     ATTR_MEDIA,
     ATTR_PLAYLIST,
     ATTR_SPEAKERS,
     ATTR_STATION,
+    ATTR_TITLE,
     DOMAIN,
     PLATFORMS,
     SERVICE_CANCEL_LIKE,
@@ -196,7 +198,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def find_like_matches(call: ServiceCall) -> None:
         controller = _controller_from_call(hass, call)
-        await controller.async_find_like_matches()
+        await controller.async_find_like_matches(
+            artist=call.data.get(ATTR_ARTIST),
+            title=call.data.get(ATTR_TITLE),
+        )
 
     async def confirm_like(call: ServiceCall) -> None:
         controller = _controller_from_call(hass, call)
@@ -284,7 +289,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_FIND_LIKE_MATCHES,
         find_like_matches,
-        schema=vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY): cv.string}),
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
+                vol.Optional(ATTR_ARTIST): cv.string,
+                vol.Optional(ATTR_TITLE): cv.string,
+            }
+        ),
     )
     hass.services.async_register(
         DOMAIN,

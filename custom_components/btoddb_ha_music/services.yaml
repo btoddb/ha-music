@@ -83,6 +83,14 @@ find_like_matches:
       example: "01J00000000000000000000000"
       selector:
         text:
+    artist:
+      example: "Neko Case"
+      selector:
+        text:
+    title:
+      example: "Hold On, Hold On"
+      selector:
+        text:
 confirm_like:
   target:
   fields:

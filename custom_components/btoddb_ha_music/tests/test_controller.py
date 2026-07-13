@@ -14,10 +14,12 @@ from homeassistant.components.media_player.const import (
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.btoddb_ha_music.controller import (
+    PLAY_HISTORY_LIMIT,
     MusicController,
     _normalize_playlist_id,
     _parse_search_response,
 )
+from custom_components.btoddb_ha_music.models import NowPlaying
 
 
 def _controller(
@@ -1248,3 +1250,122 @@ def test_resume_music_explicit_target_ignores_remembered_pause() -> None:
 
     assert hass.services.calls[1][1] == "media_play"
     assert hass.services.calls[1][2]["entity_id"] == ["media_player.kitchen"]
+
+
+def _now_playing(artist: str, title: str, album: str | None = None) -> NowPlaying:
+    """Build a NowPlaying value for play-history tests."""
+
+    display = " - ".join(part for part in (artist, title) if part != "unknown")
+    return NowPlaying(display or "unknown", "media_player.office", artist, title, album)
+
+
+def test_record_now_playing_pushes_previous_track_into_history() -> None:
+    """A track change records the previous track, newest first."""
+
+    controller = _controller()
+
+    controller.record_now_playing(_now_playing("Artist A", "Song A", "Album A"))
+    assert controller.play_history == []
+
+    controller.record_now_playing(_now_playing("Artist B", "Song B"))
+    controller.record_now_playing(_now_playing("Artist C", "Song C"))
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist B", "Song B"),
+        ("Artist A", "Song A"),
+    ]
+    assert controller.play_history[1].album == "Album A"
+    assert controller.play_history[0].played_at  # timestamp is recorded
+
+
+def test_record_now_playing_ignores_unchanged_track() -> None:
+    """Repeated updates for the same track add nothing to the history."""
+
+    controller = _controller()
+
+    controller.record_now_playing(_now_playing("Artist", "Song"))
+    controller.record_now_playing(_now_playing("Artist", "Song"))
+    controller.record_now_playing(_now_playing("Artist", "Song", "Album"))
+
+    assert controller.play_history == []
+
+
+def test_record_now_playing_skips_unidentifiable_previous_track() -> None:
+    """A previous track with unknown artist or title is not recorded."""
+
+    controller = _controller()
+
+    controller.record_now_playing(_now_playing("unknown", "unknown"))
+    controller.record_now_playing(_now_playing("Artist", "Song"))
+    controller.record_now_playing(_now_playing("unknown", "unknown"))
+
+    assert [(t.artist, t.title) for t in controller.play_history] == [
+        ("Artist", "Song")
+    ]
+
+
+def test_record_now_playing_caps_history_at_limit() -> None:
+    """The history keeps only the most recent PLAY_HISTORY_LIMIT tracks."""
+
+    controller = _controller()
+
+    for index in range(PLAY_HISTORY_LIMIT + 3):
+        controller.record_now_playing(_now_playing(f"Artist {index}", f"Song {index}"))
+
+    assert len(controller.play_history) == PLAY_HISTORY_LIMIT
+    # Newest first; the current track (last index) is not in history yet.
+    assert controller.play_history[0].title == f"Song {PLAY_HISTORY_LIMIT + 1}"
+    assert controller.play_history[-1].title == "Song 2"
+
+
+def test_record_now_playing_notifies_listeners_only_on_history_change() -> None:
+    """Listeners fire when a track lands in history, not on no-op updates."""
+
+    controller = _controller()
+    events: list[str] = []
+    controller.async_add_listener(lambda: events.append("notified"))
+
+    controller.record_now_playing(_now_playing("Artist A", "Song A"))
+    assert events == []
+
+    controller.record_now_playing(_now_playing("Artist A", "Song A"))
+    assert events == []
+
+    controller.record_now_playing(_now_playing("Artist B", "Song B"))
+    assert events == ["notified"]
+
+
+def test_find_like_matches_with_explicit_artist_and_title() -> None:
+    """Explicit artist/title (a history entry) searches without now-playing."""
+
+    hass = _FakeHass(states={}, response=_SEARCH_RESPONSE)
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+    )
+
+    asyncio.run(
+        controller.async_find_like_matches(artist="History Artist", title="Old Song")
+    )
+
+    domain, service, data, _blocking, _return_response = hass.services.calls[0]
+    assert (domain, service) == ("spotifyplus", "search_tracks")
+    assert data["criteria"] == "History Artist Old Song"
+    assert controller.like_candidates
+
+
+def test_find_like_matches_rejects_partial_artist_title() -> None:
+    """Passing only one of artist/title is refused with a clear error."""
+
+    hass = _FakeHass(states={}, response=_SEARCH_RESPONSE)
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+    )
+
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(controller.async_find_like_matches(artist="Artist"))
+    with pytest.raises(HomeAssistantError):
+        asyncio.run(controller.async_find_like_matches(title="Song"))

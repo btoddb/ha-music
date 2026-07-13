@@ -42,3 +42,12 @@ selection.
   kind — see PM-6), or when the now-playing sensor's state is missing,
   `unknown`, or `unavailable` (covers a playlist queue that finished on its
   own), so both gray out while a radio station or nothing is playing.
+- **constraint CARD-7** The Now Playing section also renders a "History"
+  title (always visible) with a chevron that expands/hides the history list
+  (issue #27, collapsed by default). The list renders the now-playing
+  sensor's `history` attribute as-is (newest first, capped at 10 by the
+  integration — see PH-1/PH-3), showing artist and song per entry plus a
+  like (♥) button that calls `find_like_matches` with that entry's `artist`
+  and `title`, feeding the existing like-candidate flow (CARD-5). The like
+  buttons mirror the Find Song button's availability and in-flight state,
+  and an empty history shows a "No songs played yet" row.
