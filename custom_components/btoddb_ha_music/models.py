@@ -27,6 +27,15 @@ class NowPlaying:
 
 
 @dataclass(frozen=True, slots=True)
+class MediaItem:
+    """A playable entry in the combined radio-station/playlist catalog."""
+
+    label: str
+    kind: str  # "radio_station" or "playlist"
+    media_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class LikeCandidate:
     """A Spotify search result eligible to be saved to Liked Songs."""
 

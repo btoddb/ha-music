@@ -20,6 +20,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    ATTR_MEDIA,
     ATTR_PLAYLIST,
     ATTR_SPEAKERS,
     ATTR_STATION,
@@ -29,6 +30,7 @@ from .const import (
     SERVICE_CONFIRM_LIKE,
     SERVICE_FIND_LIKE_MATCHES,
     SERVICE_NEXT_TRACK,
+    SERVICE_PLAY_MUSIC,
     SERVICE_PLAY_RADIO_STATION,
     SERVICE_SHUFFLE_PLAY_PLAYLIST,
     SERVICE_STOP_MUSIC,
@@ -171,6 +173,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
             speakers=call.data.get(ATTR_SPEAKERS),
         )
 
+    async def play_music(call: ServiceCall) -> None:
+        controller = _controller_from_call(hass, call)
+        await controller.async_play_music(
+            media=call.data.get(ATTR_MEDIA),
+            speakers=call.data.get(ATTR_SPEAKERS),
+        )
+
     async def stop_music(call: ServiceCall) -> None:
         controller = _controller_from_call(hass, call)
         await controller.async_stop_music(speakers=call.data.get(ATTR_SPEAKERS))
@@ -212,6 +221,18 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
                 vol.Optional(ATTR_PLAYLIST): cv.string,
+                vol.Optional(ATTR_SPEAKERS): speaker_value,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_PLAY_MUSIC,
+        play_music,
+        schema=vol.Schema(
+            {
+                vol.Optional(ATTR_CONFIG_ENTRY): cv.string,
+                vol.Optional(ATTR_MEDIA): cv.string,
                 vol.Optional(ATTR_SPEAKERS): speaker_value,
             }
         ),
@@ -264,6 +285,7 @@ def _async_unregister_services(hass: HomeAssistant) -> None:
 
     data = _async_data(hass)
     for service in (
+        SERVICE_PLAY_MUSIC,
         SERVICE_PLAY_RADIO_STATION,
         SERVICE_SHUFFLE_PLAY_PLAYLIST,
         SERVICE_STOP_MUSIC,

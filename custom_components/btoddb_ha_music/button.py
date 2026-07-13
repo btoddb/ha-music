@@ -33,6 +33,16 @@ async def async_setup_entry(hass, entry: MusicConfigEntry, async_add_entities) -
             ),
             MusicActionButton(
                 controller,
+                "play_music",
+                "play_music",
+                controller.async_play_music,
+                lambda: bool(
+                    controller.speakers
+                    and (controller.radio_stations or controller.playlists)
+                ),
+            ),
+            MusicActionButton(
+                controller,
                 "stop_music",
                 "stop_music",
                 controller.async_stop_music,
