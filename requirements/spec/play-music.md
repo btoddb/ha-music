@@ -32,7 +32,12 @@ backward compatibility.
   the `mass_player_type: group` player when present, else the first — because
   MA rejects transport commands sent to synced group members
   ("set_members needs to be implemented when PlayerFeature.SET_MEMBERS is
-  set").
+  set"). Because MA reports paused players as `idle` (which the
+  active-state filter excludes), `pause_music` records the players it
+  paused and `resume_music` sends `media_play` back to exactly those,
+  falling back to active-target resolution when nothing is remembered. The
+  remembered targets are cleared by resume, stop, or starting new playback,
+  and are not persisted across restarts.
 - **constraint PM-7** The controller records the kind of media it last
   started (`playing_kind`: radio station or playlist), clearing it on
   `stop_music`. `button.<prefix>_pause_music` and

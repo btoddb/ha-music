@@ -1151,3 +1151,100 @@ def test_pause_music_explicit_target_is_not_collapsed() -> None:
 
     _domain, _service, data, _blocking, _ret = hass.services.calls[0]
     assert data["entity_id"] == ["media_player.a", "media_player.b"]
+
+
+def test_resume_music_targets_players_remembered_from_pause() -> None:
+    """Resume reaches the paused players even though MA reports them idle.
+
+    Music Assistant reports paused players as "idle", which the active-state
+    filter excludes, so resume must replay the targets pause recorded.
+    """
+
+    states = {
+        "media_player.group": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "group"},
+            state="playing",
+        ),
+        "media_player.member": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={"Group": "media_player.group", "Member": "media_player.member"},
+    )
+
+    asyncio.run(controller.async_pause_music())
+    # MA now reports both players idle.
+    states["media_player.group"].state = "idle"
+    states["media_player.member"].state = "idle"
+
+    asyncio.run(controller.async_resume_music())
+
+    assert [call[1] for call in hass.services.calls] == ["media_pause", "media_play"]
+    assert hass.services.calls[1][2]["entity_id"] == ["media_player.group"]
+
+
+def test_resume_music_clears_remembered_pause_targets() -> None:
+    """A second resume falls back to active-target resolution (a no-op here)."""
+
+    states = {
+        "media_player.office": _FakeState(
+            {"active_queue": "q1", "mass_player_type": "player"}, state="playing"
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(hass, speakers={"Office": "media_player.office"})
+
+    asyncio.run(controller.async_pause_music())
+    states["media_player.office"].state = "idle"
+    asyncio.run(controller.async_resume_music())
+    asyncio.run(controller.async_resume_music())
+
+    assert [call[1] for call in hass.services.calls] == ["media_pause", "media_play"]
+
+
+def test_new_playback_and_stop_clear_remembered_pause_targets() -> None:
+    """Playing something new or stopping discards the remembered pause."""
+
+    states = {
+        "media_player.office": _FakeState(
+            {"active_queue": "q1", "mass_player_type": "player"}, state="playing"
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _play_controller(hass, speakers={"Office": "media_player.office"})
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_play_music(media="Dinner"))
+    assert controller._paused_entity_ids == []
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_stop_music())
+    assert controller._paused_entity_ids == []
+
+
+def test_resume_music_explicit_target_ignores_remembered_pause() -> None:
+    """An explicit speaker target overrides the remembered pause targets."""
+
+    states = {
+        "media_player.office": _FakeState(
+            {"active_queue": "q1", "mass_player_type": "player"}, state="playing"
+        ),
+        "media_player.kitchen": _FakeState(
+            {"active_queue": "q2", "mass_player_type": "player"}, state="idle"
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={"Office": "media_player.office", "Kitchen": "media_player.kitchen"},
+    )
+
+    asyncio.run(controller.async_pause_music())
+    asyncio.run(controller.async_resume_music(speakers="media_player.kitchen"))
+
+    assert hass.services.calls[1][1] == "media_play"
+    assert hass.services.calls[1][2]["entity_id"] == ["media_player.kitchen"]
