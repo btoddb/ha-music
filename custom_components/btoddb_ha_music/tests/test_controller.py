@@ -1111,6 +1111,41 @@ def test_resume_music_collapses_members_without_a_group_to_one_target() -> None:
     assert data["entity_id"] == ["media_player.a"]
 
 
+def test_next_track_collapses_group_members_onto_group_player() -> None:
+    """Skip goes to one player per queue, or the queue advances once per target.
+
+    A synced member and its group player share the same MA queue; sending
+    media_next_track to both skips two songs (issue: Skip skipped the now
+    playing AND the next song).
+    """
+
+    states = {
+        "media_player.kitchen": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+        "media_player.main_floor": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "group"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "Main Floor": "media_player.main_floor",
+            "Kitchen": "media_player.kitchen",
+        },
+    )
+
+    asyncio.run(controller.async_next_track())
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_next_track"
+    assert data["entity_id"] == ["media_player.main_floor"]
+
+
 def test_pause_music_keeps_players_without_queue_attributes() -> None:
     """Players missing MA attributes each stay their own target."""
 

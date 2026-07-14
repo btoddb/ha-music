@@ -411,6 +411,8 @@ class MusicController:
         """
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
+        if speakers is None:
+            entity_ids = self._collapse_queue_targets(entity_ids)
         if not entity_ids:
             return
         await self.hass.services.async_call(
