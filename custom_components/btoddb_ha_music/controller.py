@@ -598,7 +598,9 @@ class MusicController:
         del self.play_history[PLAY_HISTORY_LIMIT:]
         self._notify_listeners()
 
-    async def _async_search_tracks(self, artist: str, title: str) -> list[LikeCandidate]:
+    async def _async_search_tracks(
+        self, artist: str, title: str
+    ) -> list[LikeCandidate]:
         """Search Spotify for tracks matching an artist/title.
 
         Returns the parsed candidates without mutating the like-picker state,

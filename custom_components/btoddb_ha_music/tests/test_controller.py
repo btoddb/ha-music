@@ -1697,7 +1697,9 @@ def _favorites(**by_id: bool) -> dict:
     return {"result": {f"spotify:track:{tid}": liked for tid, liked in by_id.items()}}
 
 
-def _liked_controller(hass, *, states_attrs: dict, spotify_entity: str = "media_player.spotifyplus") -> MusicController:
+def _liked_controller(
+    hass, *, states_attrs: dict, spotify_entity: str = "media_player.spotifyplus"
+) -> MusicController:
     """Build a controller whose Office speaker reports the given attributes."""
 
     hass.states = SimpleNamespace(
@@ -1743,13 +1745,17 @@ def test_parse_favorites_response_handles_malformed_input() -> None:
 
 
 def _candidate(track_id: str, artist: str, title: str) -> LikeCandidate:
-    return LikeCandidate(track_id, f"spotify:track:{track_id}", "l", artist, title, None)
+    return LikeCandidate(
+        track_id, f"spotify:track:{track_id}", "l", artist, title, None
+    )
 
 
 def test_tracks_match_requires_artist_and_title() -> None:
     """A candidate matches only when both artist and title align."""
 
-    assert _tracks_match("Jamie xx/Romy", "Loud Places", _candidate("1", "Jamie xx, Romy", "Loud Places"))
+    assert _tracks_match(
+        "Jamie xx/Romy", "Loud Places", _candidate("1", "Jamie xx, Romy", "Loud Places")
+    )
     # Title mismatch.
     assert not _tracks_match("Artist", "Song", _candidate("1", "Artist", "Other"))
     # Artist mismatch.
@@ -1779,7 +1785,9 @@ def test_resolve_liked_uses_exact_content_id_when_spotify() -> None:
         },
     )
 
-    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
     services = [call[1] for call in hass.services.calls]
     assert services == ["check_track_favorites"]
 
@@ -1821,7 +1829,9 @@ def test_resolve_liked_fuzzy_search_when_not_spotify() -> None:
         },
     )
 
-    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
     services = [call[1] for call in hass.services.calls]
     assert services == ["search_tracks", "check_track_favorites"]
 
@@ -1963,7 +1973,9 @@ def test_resolve_liked_rechecks_when_content_id_arrives_later() -> None:
 
     # Music Assistant later attaches the exact Spotify track id.
     state.attributes[ATTR_MEDIA_CONTENT_ID] = "spotify://track/xyz"
-    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
 
 
 def test_resolve_liked_does_not_collide_distinct_recordings() -> None:
@@ -1986,7 +1998,9 @@ def test_resolve_liked_does_not_collide_distinct_recordings() -> None:
         spotify_entity="media_player.spotifyplus",
     )
 
-    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
     state.attributes[ATTR_MEDIA_CONTENT_ID] = "spotify://track/bbb"
     assert (
         asyncio.run(controller.async_resolve_now_playing_liked())
