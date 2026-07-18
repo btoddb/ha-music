@@ -1,5 +1,5 @@
-// v0.0.30
-const CARD_VERSION = "v0.0.30";
+// v0.0.31
+const CARD_VERSION = "v0.0.31";
 const CARD_TYPE = "btoddb-ha-music-like-card";
 
 console.info(
