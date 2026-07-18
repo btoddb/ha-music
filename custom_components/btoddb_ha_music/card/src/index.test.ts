@@ -540,23 +540,62 @@ describe(CARD_TYPE, () => {
     ]);
   });
 
-  it("renders a collapsed History section that the chevron expands and hides", () => {
-    const card = makeCard(makeHass());
+  it("always shows the last 2 history entries and uses the chevron to expand the rest", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "unknown",
+        attributes: {
+          playback_active: false,
+          history: [
+            { artist: "Artist C", title: "Song C", album: null, played_at: "2026-07-13T03:00:00" },
+            { artist: "Artist B", title: "Song B", album: null, played_at: "2026-07-13T02:00:00" },
+            { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+          ],
+        },
+      },
+    });
+    const card = makeCard(hass);
     const root = shadow(card);
 
     const toggle = root.querySelector<HTMLButtonElement>(".history-toggle")!;
-    const list = root.querySelector<HTMLElement>(".history-list")!;
     expect(toggle.querySelector(".history-label")?.textContent).toBe("History");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(list.classList.contains("hidden")).toBe(true);
+    expect(toggle.classList.contains("hidden")).toBe(false);
+
+    const entries = () => Array.from(root.querySelectorAll<HTMLLIElement>(".history-list .history-entry"));
+    const visibleArtists = () =>
+      entries()
+        .filter((li) => !li.classList.contains("hidden"))
+        .map((li) => li.querySelector(".history-artist")?.textContent);
+
+    expect(visibleArtists()).toEqual(["Artist C", "Artist B"]);
 
     toggle.click();
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(list.classList.contains("hidden")).toBe(false);
+    expect(visibleArtists()).toEqual(["Artist C", "Artist B", "Artist A"]);
 
     toggle.click();
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(list.classList.contains("hidden")).toBe(true);
+    expect(visibleArtists()).toEqual(["Artist C", "Artist B"]);
+  });
+
+  it("hides the chevron when there are 2 or fewer history entries", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "unknown",
+        attributes: {
+          playback_active: false,
+          history: [
+            { artist: "Artist B", title: "Song B", album: null, played_at: "2026-07-13T02:00:00" },
+            { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00" },
+          ],
+        },
+      },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+    const toggle = root.querySelector<HTMLButtonElement>(".history-toggle")!;
+    expect(toggle.classList.contains("hidden")).toBe(true);
   });
 
   it("renders history entries newest-first from the now-playing sensor", () => {
@@ -620,9 +659,10 @@ describe(CARD_TYPE, () => {
   it("shows an empty-history row when nothing has played yet", () => {
     const card = makeCard(makeHass());
     const root = shadow(card);
-    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
     expect(root.querySelectorAll(".history-list .history-entry").length).toBe(0);
-    expect(root.querySelector(".history-list .history-empty")?.textContent).toBe("No songs played yet");
+    expect(root.querySelector(".history-list .history-empty")?.textContent).toBe(
+      "This space will fill up as you play songs"
+    );
   });
 
   it("liking a history entry calls find_like_matches with that artist and title", async () => {

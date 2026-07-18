@@ -162,7 +162,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     });
 
     const historyList = document.createElement("ul");
-    historyList.className = "track-list history-list hidden";
+    historyList.className = "track-list history-list";
 
     // Now Playing renders as a single history-style entry (same outline as
     // the history list) so the currently playing track and the history read
@@ -535,18 +535,23 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     }
   }
 
+  // The most recent PINNED_HISTORY_COUNT tracks always show; the chevron
+  // only expands/collapses the older ones beneath them.
+  private static readonly PINNED_HISTORY_COUNT = 2;
+
   private _updateHistory(history: PlayedTrack[]): void {
     if (!this.shadowRoot) return;
 
     const toggle = this.shadowRoot.querySelector<HTMLButtonElement>(".history-toggle");
+    const hasOverflow = history.length > BtoddbHaMusicLikeCard.PINNED_HISTORY_COUNT;
     if (toggle) {
+      toggle.classList.toggle("hidden", !hasOverflow);
       toggle.setAttribute("aria-expanded", String(this._historyExpanded));
       toggle.classList.toggle("expanded", this._historyExpanded);
     }
 
     const list = this.shadowRoot.querySelector<HTMLUListElement>(".history-list");
     if (!list) return;
-    list.classList.toggle("hidden", !this._historyExpanded);
 
     const key = (t: PlayedTrack) => `${t.artist}|${t.title}|${t.played_at}`;
     const existingKeys = Array.from(
@@ -563,7 +568,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       if (history.length === 0) {
         const empty = document.createElement("li");
         empty.className = "history-empty";
-        empty.textContent = "No songs played yet";
+        empty.textContent = "This space will fill up as you play songs";
         list.append(empty);
       }
       for (const track of history) {
@@ -574,6 +579,17 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         list.append(li);
       }
     }
+
+    // The first PINNED_HISTORY_COUNT rows always show; the rest stay hidden
+    // until the chevron expands them.
+    list
+      .querySelectorAll<HTMLLIElement>(".history-entry")
+      .forEach((li, index) => {
+        li.classList.toggle(
+          "hidden",
+          index >= BtoddbHaMusicLikeCard.PINNED_HISTORY_COUNT && !this._historyExpanded
+        );
+      });
 
     // Liked state can arrive after the rows are built (the async favorites
     // lookup, or a confirmed like stamping older entries), so refresh each
@@ -907,6 +923,9 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       .history-entry:last-child {
         border-bottom: none;
       }
+      .history-entry.hidden {
+        display: none;
+      }
       .history-text {
         display: flex;
         flex-direction: column;
@@ -969,7 +988,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         text-align: center;
       }
       .find-status.hidden,
-      .like-section.hidden {
+      .like-section.hidden,
+      .history-toggle.hidden {
         display: none;
       }
       .candidate-list {
