@@ -229,6 +229,7 @@ class LikeCandidateSelect(MusicEntity, SelectEntity):
                     "artist": c.artist,
                     "title": c.title,
                     "album": c.album,
+                    "liked": c.liked,
                 }
                 for c in self._controller.like_candidates
             ]

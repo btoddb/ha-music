@@ -9,17 +9,26 @@ import pytest
 
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_ARTIST,
+    ATTR_MEDIA_CONTENT_ID,
     ATTR_MEDIA_TITLE,
 )
 from homeassistant.exceptions import HomeAssistantError
 
+from custom_components.btoddb_ha_music.const import (
+    LIKED_STATE_LIKED,
+    LIKED_STATE_NOT_LIKED,
+    LIKED_STATE_UNKNOWN,
+)
 from custom_components.btoddb_ha_music.controller import (
     PLAY_HISTORY_LIMIT,
     MusicController,
+    _extract_spotify_track_id,
     _normalize_playlist_id,
+    _parse_favorites_response,
     _parse_search_response,
+    _tracks_match,
 )
-from custom_components.btoddb_ha_music.models import NowPlaying
+from custom_components.btoddb_ha_music.models import LikeCandidate, NowPlaying
 
 
 def _controller(
@@ -1648,3 +1657,262 @@ def test_playback_active_counts_remembered_pause_as_active() -> None:
 
     asyncio.run(controller.async_resume_music())
     assert controller.playback_active() is False
+
+
+# --- issue #43: "already liked" heart resolution ------------------------------
+
+
+class _RoutedServices:
+    """Records service calls and returns a per-service canned response."""
+
+    def __init__(self, responses: dict[str, dict] | None = None) -> None:
+        self.calls: list[tuple] = []
+        self._responses = responses or {}
+
+    async def async_call(
+        self,
+        domain: str,
+        service: str,
+        data: dict,
+        blocking: bool = True,
+        return_response: bool = False,
+    ):
+        self.calls.append((domain, service, data, blocking, return_response))
+        return self._responses.get(service) if return_response else None
+
+
+class _RoutedHass:
+    """A fake hass whose service responses vary by service name."""
+
+    def __init__(
+        self, *, states: dict | None = None, responses: dict[str, dict] | None = None
+    ) -> None:
+        self.states = SimpleNamespace(get=(states or {}).get)
+        self.services = _RoutedServices(responses)
+
+
+def _favorites(**by_id: bool) -> dict:
+    """Build a SpotifyPlus check_track_favorites response."""
+
+    return {"result": {f"spotify:track:{tid}": liked for tid, liked in by_id.items()}}
+
+
+def _liked_controller(hass, *, states_attrs: dict, spotify_entity: str = "media_player.spotifyplus") -> MusicController:
+    """Build a controller whose Office speaker reports the given attributes."""
+
+    hass.states = SimpleNamespace(
+        get={"media_player.office": _FakeState(states_attrs)}.get
+    )
+    return _like_controller(
+        hass, speakers={"Office": "media_player.office"}, spotify_entity=spotify_entity
+    )
+
+
+@pytest.mark.parametrize(
+    "content_id, expected",
+    [
+        ("spotify--F4QubKZS://track/7lPgKA5mLFNmGPMdb07OlM", "7lPgKA5mLFNmGPMdb07OlM"),
+        ("spotify://track/abc123", "abc123"),
+        ("spotify:track:abc123", "abc123"),
+        ("spotify://track/abc123?foo=bar", "abc123"),
+        ("radiobrowser://radio/kexp", None),
+        ("spotify://playlist/xyz", None),
+        ("", None),
+        (None, None),
+        (123, None),
+    ],
+)
+def test_extract_spotify_track_id(content_id, expected) -> None:
+    """Only Spotify track content ids yield a bare track id."""
+
+    assert _extract_spotify_track_id(content_id) == expected
+
+
+def test_parse_favorites_response_reduces_uris_to_ids() -> None:
+    """The favorites response is keyed by bare track id and coerced to bool."""
+
+    parsed = _parse_favorites_response(_favorites(a=True, b=False))
+    assert parsed == {"a": True, "b": False}
+
+
+def test_parse_favorites_response_handles_malformed_input() -> None:
+    """Non-dict payloads degrade to an empty mapping."""
+
+    assert _parse_favorites_response(None) == {}
+    assert _parse_favorites_response({"result": "nope"}) == {}
+
+
+def _candidate(track_id: str, artist: str, title: str) -> LikeCandidate:
+    return LikeCandidate(track_id, f"spotify:track:{track_id}", "l", artist, title, None)
+
+
+def test_tracks_match_requires_artist_and_title() -> None:
+    """A candidate matches only when both artist and title align."""
+
+    assert _tracks_match("Jamie xx/Romy", "Loud Places", _candidate("1", "Jamie xx, Romy", "Loud Places"))
+    # Title mismatch.
+    assert not _tracks_match("Artist", "Song", _candidate("1", "Artist", "Other"))
+    # Artist mismatch.
+    assert not _tracks_match("Artist", "Song", _candidate("1", "Someone", "Song"))
+
+
+def test_tracks_match_ignores_feat_and_punctuation() -> None:
+    """Bracketed qualifiers and feat clauses do not defeat a real match."""
+
+    assert _tracks_match(
+        "Artist",
+        "Song (feat. Guest) [Remastered]",
+        _candidate("1", "Artist feat. Guest", "Song"),
+    )
+
+
+def test_resolve_liked_uses_exact_content_id_when_spotify() -> None:
+    """A Spotify-sourced track is checked by its exact id, no search."""
+
+    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=True)})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    services = [call[1] for call in hass.services.calls]
+    assert services == ["check_track_favorites"]
+
+
+def test_resolve_liked_exact_content_id_not_liked() -> None:
+    """An exact-id check that returns False resolves to not_liked."""
+
+    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=False)})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked())
+        == LIKED_STATE_NOT_LIKED
+    )
+
+
+def test_resolve_liked_fuzzy_search_when_not_spotify() -> None:
+    """A non-Spotify source searches, matches, and reports liked."""
+
+    hass = _RoutedHass(
+        responses={
+            "search_tracks": _SEARCH_RESPONSE,
+            "check_track_favorites": _favorites(**{"1": False, "2": True}),
+        }
+    )
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "radiobrowser://radio/kexp",
+        },
+    )
+
+    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    services = [call[1] for call in hass.services.calls]
+    assert services == ["search_tracks", "check_track_favorites"]
+
+
+def test_resolve_liked_returns_unknown_when_no_match() -> None:
+    """A search with no artist/title match resolves to unknown, no check."""
+
+    hass = _RoutedHass(responses={"search_tracks": _SEARCH_RESPONSE})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Nobody",
+            ATTR_MEDIA_TITLE: "Nothing",
+            ATTR_MEDIA_CONTENT_ID: "radiobrowser://radio/kexp",
+        },
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_UNKNOWN
+    )
+    services = [call[1] for call in hass.services.calls]
+    assert services == ["search_tracks"]
+
+
+def test_resolve_liked_without_spotify_entity_is_unknown() -> None:
+    """No SpotifyPlus entity means the heart cannot be resolved."""
+
+    hass = _RoutedHass()
+    controller = _liked_controller(
+        hass,
+        states_attrs={ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+        spotify_entity="",
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_UNKNOWN
+    )
+    assert hass.services.calls == []
+
+
+def test_resolve_liked_caches_confident_result() -> None:
+    """Re-resolving the same track hits the cache instead of the API."""
+
+    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=True)})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    asyncio.run(controller.async_resolve_now_playing_liked())
+    asyncio.run(controller.async_resolve_now_playing_liked())
+    assert [call[1] for call in hass.services.calls] == ["check_track_favorites"]
+
+
+def test_find_like_matches_annotates_candidate_liked_state() -> None:
+    """Each search candidate carries its exact Liked Songs membership."""
+
+    hass = _RoutedHass(
+        responses={
+            "search_tracks": _SEARCH_RESPONSE,
+            "check_track_favorites": _favorites(**{"1": True, "2": False}),
+        }
+    )
+    controller = _liked_controller(
+        hass,
+        states_attrs={ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+    )
+
+    asyncio.run(controller.async_find_like_matches(artist="Artist", title="Song"))
+    assert [c.liked for c in controller.like_candidates] == [True, False]
+
+
+def test_confirm_like_clears_liked_cache() -> None:
+    """Liking a track invalidates the cached heart state so it re-checks."""
+
+    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=False)})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    asyncio.run(controller.async_resolve_now_playing_liked())
+    controller.like_candidates = [_candidate("abc", "Artist", "Song")]
+    controller.selected_like_candidate = controller.like_candidates[0]
+    asyncio.run(controller.async_confirm_like())
+    assert controller._liked_cache == {}

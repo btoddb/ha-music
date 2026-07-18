@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_ALBUM_NAME,
     ATTR_MEDIA_ARTIST,
+    ATTR_MEDIA_CONTENT_ID,
     ATTR_MEDIA_TITLE,
     DOMAIN as MEDIA_PLAYER_DOMAIN,
 )
@@ -43,10 +45,14 @@ from .const import (
     CONF_SPEAKERS,
     CONF_SPOTIFY_ENTITY,
     DEFAULT_LIKE_SEARCH_LIMIT,
+    LIKED_STATE_LIKED,
+    LIKED_STATE_NOT_LIKED,
+    LIKED_STATE_UNKNOWN,
     MA_ENQUEUE_REPLACE,
     MUSIC_ASSISTANT_DOMAIN,
     SERVICE_MA_PLAY_MEDIA,
     SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS,
+    SERVICE_SPOTIFYPLUS_CHECK_TRACK_FAVORITES,
     SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES,
     SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
     SPOTIFYPLUS_DOMAIN,
@@ -98,6 +104,10 @@ class MusicController:
         self.like_playlist_id = _normalize_playlist_id(data.get(CONF_LIKE_PLAYLIST_ID))
         self.like_candidates: list[LikeCandidate] = []
         self.selected_like_candidate: LikeCandidate | None = None
+        # Cache of resolved "already liked" state keyed on (artist, title), so
+        # the same now-playing track is not searched/checked against Spotify
+        # repeatedly as the media player churns state (issue #43).
+        self._liked_cache: dict[tuple[str, str], str] = {}
         # Kind of the last media this controller started ("radio_station" or
         # "playlist"), cleared on stop. Pause/resume only make sense for
         # playlists, so their buttons key their availability off this.
@@ -509,9 +519,15 @@ class MusicController:
             artist = state.attributes.get(ATTR_MEDIA_ARTIST)
             title = state.attributes.get(ATTR_MEDIA_TITLE)
             album = state.attributes.get(ATTR_MEDIA_ALBUM_NAME)
+            content_id = state.attributes.get(ATTR_MEDIA_CONTENT_ID)
             display = " - ".join(part for part in (artist, title) if part) or "unknown"
             return NowPlaying(
-                display, entity_id, artist or "unknown", title or "unknown", album
+                display,
+                entity_id,
+                artist or "unknown",
+                title or "unknown",
+                album,
+                content_id,
             )
 
         return NowPlaying("unknown", None, "unknown", "unknown", None)
@@ -579,6 +595,52 @@ class MusicController:
         del self.play_history[PLAY_HISTORY_LIMIT:]
         self._notify_listeners()
 
+    async def _async_search_tracks(self, artist: str, title: str) -> list[LikeCandidate]:
+        """Search Spotify for tracks matching an artist/title.
+
+        Returns the parsed candidates without mutating the like-picker state,
+        so both the Like flow and the "already liked" heart check share one
+        search path (issue #43).
+        """
+
+        query = f"{artist} {title}"
+        response = await self.hass.services.async_call(
+            SPOTIFYPLUS_DOMAIN,
+            SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
+            {
+                "entity_id": self.spotify_entity_id,
+                "criteria": query,
+                "limit": self.like_search_limit,
+            },
+            blocking=True,
+            return_response=True,
+        )
+        return _parse_search_response(response)
+
+    async def _async_check_track_favorites(
+        self, track_ids: Iterable[str]
+    ) -> dict[str, bool]:
+        """Return which of the given Spotify track ids are in Liked Songs.
+
+        Keys in the returned mapping are bare track ids. An empty input skips
+        the service call entirely.
+        """
+
+        ids = [track_id for track_id in track_ids if track_id]
+        if not ids:
+            return {}
+        response = await self.hass.services.async_call(
+            SPOTIFYPLUS_DOMAIN,
+            SERVICE_SPOTIFYPLUS_CHECK_TRACK_FAVORITES,
+            {
+                "entity_id": self.spotify_entity_id,
+                "ids": ",".join(ids),
+            },
+            blocking=True,
+            return_response=True,
+        )
+        return _parse_favorites_response(response)
+
     async def async_find_like_matches(
         self, *, artist: str | None = None, title: str | None = None
     ) -> None:
@@ -600,23 +662,11 @@ class MusicController:
         elif not artist or not title:
             raise HomeAssistantError("Both artist and title are required")
 
-        query = f"{artist} {title}"
-        response = await self.hass.services.async_call(
-            SPOTIFYPLUS_DOMAIN,
-            SERVICE_SPOTIFYPLUS_SEARCH_TRACKS,
-            {
-                "entity_id": self.spotify_entity_id,
-                "criteria": query,
-                "limit": self.like_search_limit,
-            },
-            blocking=True,
-            return_response=True,
-        )
-
-        candidates = _parse_search_response(response)
+        candidates = await self._async_search_tracks(artist, title)
         if not candidates:
-            raise HomeAssistantError(f"No Spotify matches found for {query}")
+            raise HomeAssistantError(f"No Spotify matches found for {artist} {title}")
 
+        candidates = await self._async_annotate_liked(candidates)
         self.like_candidates = candidates
         self.selected_like_candidate = candidates[0]
         self._notify_listeners()
@@ -673,6 +723,9 @@ class MusicController:
                     self.like_playlist_id,
                     err,
                 )
+        # A just-liked track invalidates any cached "not liked" heart state,
+        # so the next resolve re-checks against Spotify (issue #43).
+        self._liked_cache.clear()
         self._clear_like_candidates()
 
     async def async_cancel_like(self) -> None:
@@ -687,6 +740,102 @@ class MusicController:
         self.like_candidates = []
         self.selected_like_candidate = None
         self._notify_listeners()
+
+    async def _async_annotate_liked(
+        self, candidates: list[LikeCandidate]
+    ) -> list[LikeCandidate]:
+        """Return the candidates with their Liked Songs membership filled in.
+
+        A favorites-check failure is non-fatal: the candidates are returned
+        unannotated (``liked`` left as None) so the Like flow still works.
+        """
+
+        try:
+            favorites = await self._async_check_track_favorites(
+                candidate.track_id for candidate in candidates
+            )
+        except HomeAssistantError as err:
+            _LOGGER.debug("Could not check track favorites: %s", err)
+            return candidates
+        return [
+            replace(candidate, liked=favorites.get(candidate.track_id))
+            for candidate in candidates
+        ]
+
+    async def async_resolve_now_playing_liked(self) -> str:
+        """Return whether the now-playing track is already in Liked Songs.
+
+        Resolves the current track to one or more Spotify track ids and checks
+        their favorites membership (issue #43):
+
+        - A Spotify-sourced track carries its exact id in ``media_content_id``,
+          so it is checked directly.
+        - Otherwise the track's artist/title are searched on Spotify and only
+          candidates whose artist AND title match are checked; the song counts
+          as liked if any matching candidate is a favorite.
+
+        Returns ``LIKED_STATE_UNKNOWN`` when there is no Spotify entity, nothing
+        identifiable is playing, or no confident match is found, so the heart
+        never claims an unresolved track is unliked. Results are cached per
+        (artist, title).
+        """
+
+        if self.spotify_entity_id is None:
+            return LIKED_STATE_UNKNOWN
+
+        now_playing = self.now_playing()
+        artist, title = now_playing.artist, now_playing.title
+        if artist == "unknown" or title == "unknown":
+            return LIKED_STATE_UNKNOWN
+
+        cache_key = (artist, title)
+        cached = self._liked_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        state = await self._async_compute_liked(now_playing)
+        # Only cache confident answers; an unknown may become resolvable once
+        # richer metadata (e.g. a Spotify content id) arrives for the track.
+        if state != LIKED_STATE_UNKNOWN:
+            self._liked_cache[cache_key] = state
+        return state
+
+    async def _async_compute_liked(self, now_playing: NowPlaying) -> str:
+        """Do the un-cached favorites resolution for a now-playing track."""
+
+        track_id = _extract_spotify_track_id(now_playing.media_content_id)
+        try:
+            if track_id is not None:
+                favorites = await self._async_check_track_favorites([track_id])
+                if track_id in favorites:
+                    return (
+                        LIKED_STATE_LIKED
+                        if favorites[track_id]
+                        else LIKED_STATE_NOT_LIKED
+                    )
+                return LIKED_STATE_UNKNOWN
+
+            candidates = await self._async_search_tracks(
+                now_playing.artist, now_playing.title
+            )
+            matches = [
+                candidate
+                for candidate in candidates
+                if _tracks_match(now_playing.artist, now_playing.title, candidate)
+            ]
+            if not matches:
+                return LIKED_STATE_UNKNOWN
+            favorites = await self._async_check_track_favorites(
+                candidate.track_id for candidate in matches
+            )
+            if not favorites:
+                return LIKED_STATE_UNKNOWN
+            if any(favorites.get(candidate.track_id) for candidate in matches):
+                return LIKED_STATE_LIKED
+            return LIKED_STATE_NOT_LIKED
+        except HomeAssistantError as err:
+            _LOGGER.debug("Could not resolve liked state: %s", err)
+            return LIKED_STATE_UNKNOWN
 
     def _resolve_speakers(self, speakers: str | list[str] | None) -> list[str]:
         """Resolve a speaker option or entity id list into media players."""
@@ -794,6 +943,102 @@ def _parse_search_response(response: Any) -> list[LikeCandidate]:
 
         candidates.append(LikeCandidate(track_id, uri, label, artist, title, album))
     return candidates
+
+
+def _parse_favorites_response(response: Any) -> dict[str, bool]:
+    """Map bare Spotify track ids to their Liked Songs membership.
+
+    SpotifyPlus returns ``{"result": {"spotify:track:<id>": bool, ...}}``; the
+    keys are reduced to bare ids so callers can look up by ``track_id``.
+    """
+
+    favorites: dict[str, bool] = {}
+    if not isinstance(response, dict):
+        return favorites
+    payload = response.get("result")
+    if not isinstance(payload, dict):
+        return favorites
+    for key, value in payload.items():
+        if not isinstance(key, str) or not key:
+            continue
+        track_id = key.rsplit(":", 1)[-1]
+        favorites[track_id] = bool(value)
+    return favorites
+
+
+def _extract_spotify_track_id(content_id: Any) -> str | None:
+    """Extract a bare Spotify track id from a media_content_id, if present.
+
+    Handles Music Assistant's provider-scoped scheme
+    (``spotify--<instance>://track/<id>``), the plain ``spotify://track/<id>``
+    URI, and the ``spotify:track:<id>`` form. Returns None for anything that is
+    not a Spotify track (radio streams, other providers), so a non-Spotify
+    source falls through to the fuzzy search path (issue #43).
+    """
+
+    if not isinstance(content_id, str):
+        return None
+    value = content_id.strip()
+    if not value:
+        return None
+
+    scheme, sep, rest = value.partition("://")
+    if sep and scheme.startswith("spotify"):
+        kind, _, tail = rest.partition("/")
+        if kind == "track" and tail:
+            track_id = tail.split("?", 1)[0].strip("/").split("/", 1)[0]
+            return track_id if track_id.isalnum() else None
+        return None
+    if value.startswith("spotify:track:"):
+        track_id = value[len("spotify:track:") :].split("?", 1)[0]
+        return track_id if track_id.isalnum() else None
+    return None
+
+
+# Bracketed qualifiers — "(feat. X)", "[Remastered]" — and trailing
+# feat/with clauses are dropped before comparing titles so metadata noise does
+# not defeat an otherwise exact match.
+_STRIP_BRACKETS = re.compile(r"[(\[{].*?[)\]}]")
+_STRIP_FEAT = re.compile(r"\b(?:feat|ft|featuring|with)\b.*", re.IGNORECASE)
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+# Separators that join multiple artists in a single display string, across the
+# Music Assistant ("A/B") and Spotify ("A, B") conventions.
+_ARTIST_SPLIT = re.compile(r"[/,&]|\bx\b|\band\b|\bfeat\b|\bft\b", re.IGNORECASE)
+
+
+def _normalize_text(text: str) -> str:
+    """Lowercase and strip punctuation/qualifiers for fuzzy comparison."""
+
+    lowered = _STRIP_BRACKETS.sub(" ", text.casefold())
+    lowered = _STRIP_FEAT.sub(" ", lowered)
+    return " ".join(_NON_ALNUM.sub(" ", lowered).split())
+
+
+def _artist_tokens(artist: str) -> set[str]:
+    """Split a possibly-multi-artist string into a set of normalized names."""
+
+    return {
+        token
+        for part in _ARTIST_SPLIT.split(artist)
+        if (token := _normalize_text(part))
+    }
+
+
+def _tracks_match(artist: str, title: str, candidate: LikeCandidate) -> bool:
+    """Return whether a search candidate is the same song as artist/title.
+
+    The title must match exactly once normalized, and the artist sets must
+    overlap — the artist-AND-title rule that keeps a liked cover or remix from
+    lighting the heart for a different recording (issue #43).
+    """
+
+    if _normalize_text(title) != _normalize_text(candidate.title):
+        return False
+    now_tokens = _artist_tokens(artist)
+    candidate_tokens = _artist_tokens(candidate.artist)
+    if not now_tokens or not candidate_tokens:
+        return False
+    return bool(now_tokens & candidate_tokens)
 
 
 def _normalize_playlist_id(raw: Any) -> str | None:

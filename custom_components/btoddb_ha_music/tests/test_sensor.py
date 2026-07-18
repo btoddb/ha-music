@@ -135,3 +135,101 @@ def test_sensor_playback_active_true_while_paused_by_the_integration() -> None:
     sensor._update_now_playing()
 
     assert sensor.extra_state_attributes["playback_active"] is True
+
+
+# --- issue #43: now-playing "already liked" heart ----------------------------
+
+
+from homeassistant.components.media_player.const import (  # noqa: E402
+    ATTR_MEDIA_CONTENT_ID,
+)
+
+from custom_components.btoddb_ha_music.const import (  # noqa: E402
+    LIKED_STATE_LIKED,
+    LIKED_STATE_UNKNOWN,
+)
+
+
+class _RoutedServices:
+    """Records service calls and returns a per-service canned response."""
+
+    def __init__(self, responses: dict[str, dict]) -> None:
+        self.calls: list[tuple] = []
+        self._responses = responses
+
+    async def async_call(
+        self, domain, service, data, blocking=True, return_response=False
+    ):
+        self.calls.append((domain, service))
+        return self._responses.get(service) if return_response else None
+
+
+def _liked_sensor_fixture(content_id: str, responses: dict[str, dict]):
+    """Build a sensor whose SpotifyPlus-backed liked resolution can be driven."""
+
+    states = {
+        "media_player.office": _FakeState(
+            {
+                ATTR_MEDIA_ARTIST: "Artist A",
+                ATTR_MEDIA_TITLE: "Song A",
+                ATTR_MEDIA_CONTENT_ID: content_id,
+            }
+        )
+    }
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=states.get),
+        services=_RoutedServices(responses),
+    )
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={
+            "speakers": {"Office": "media_player.office"},
+            "radio_stations": {},
+            "playlists": {},
+            "spotify_entity": "media_player.spotifyplus",
+        },
+        options={},
+    )
+    sensor = NowPlayingSensor(MusicController(hass, entry))
+    return sensor, hass
+
+
+def test_sensor_liked_defaults_to_unknown() -> None:
+    """Before any resolution the heart state reads unknown."""
+
+    sensor, _states = _sensor_fixture()
+    assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_UNKNOWN
+
+
+def test_sensor_resolves_liked_from_exact_content_id() -> None:
+    """A Spotify-sourced now-playing track resolves its exact liked state."""
+
+    import asyncio
+
+    sensor, _hass = _liked_sensor_fixture(
+        "spotify://track/abc",
+        {"check_track_favorites": {"result": {"spotify:track:abc": True}}},
+    )
+    writes: list[int] = []
+    sensor.async_write_ha_state = lambda: writes.append(1)
+
+    sensor._liked_key = ("Artist A", "Song A")
+    asyncio.run(sensor._async_resolve_liked(("Artist A", "Song A")))
+
+    assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_LIKED
+    assert writes == [1]
+
+
+def test_sensor_sync_liked_skips_scheduling_without_spotify() -> None:
+    """With no SpotifyPlus entity the sensor never schedules a lookup."""
+
+    sensor, _states = _sensor_fixture()
+    scheduled: list = []
+    sensor.hass = SimpleNamespace(async_create_task=scheduled.append)
+
+    sensor._sync_liked()
+
+    assert scheduled == []
+    assert sensor._liked_key is None
+    assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_UNKNOWN

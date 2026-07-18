@@ -88,3 +88,13 @@ selection.
   graying (CARD-5), because history entries carry their own artist/title and
   must stay likable after playback stops. An empty history shows a "No songs
   played yet" row.
+- **constraint CARD-8** The Now Playing ♥ doubles as an "already liked"
+  indicator driven by the sensor's `now_playing_liked` attribute (LS-4): a
+  filled ♥ (`.liked`) when `liked`, an outline ♡ (`.not-liked`) when
+  `not_liked`, and a muted outline ♡ (`.liked-unknown`) when `unknown` or the
+  attribute is absent, so an unresolved track never reads as "not liked". The
+  button stays a Like affordance in every state, and its accessible label
+  notes when the song is already liked. In the like-candidate picker (CARD-5),
+  each candidate whose `liked` attribute (LS-6) is true shows a filled ♥
+  marker; the marker is hidden for candidates that are not liked or not yet
+  checked. History-row hearts are not resolved and render as unknown (LS-8).
