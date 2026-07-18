@@ -27,7 +27,13 @@ interface LikeCandidate {
   artist: string;
   title: string;
   album: string | null;
+  liked?: boolean | null;
 }
+
+// Whether the now-playing track (or a candidate) is already in Liked Songs.
+// "unknown" means it could not be resolved confidently, so the heart stays
+// neutral rather than claiming the song is unliked (issue #43).
+type LikedState = "liked" | "not_liked" | "unknown";
 
 interface PlayedTrack {
   artist: string;
@@ -294,7 +300,10 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
             title: known(title) ? title : "unknown",
           }
         : null;
-    this._updateNowPlayingEntry(currentTrack);
+    const likedAttr = nowPlaying?.attributes?.now_playing_liked;
+    const nowPlayingLiked: LikedState =
+      likedAttr === "liked" || likedAttr === "not_liked" ? likedAttr : "unknown";
+    this._updateNowPlayingEntry(currentTrack, nowPlayingLiked);
 
     // History (from the now-playing sensor's history attribute, newest first)
     const history =
@@ -377,6 +386,9 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
           li.setAttribute("role", "option");
           li.dataset.value = candidate.label;
 
+          const textWrap = document.createElement("div");
+          textWrap.className = "candidate-text";
+
           const artistSpan = document.createElement("span");
           artistSpan.className = "candidate-artist";
           artistSpan.textContent = candidate.artist;
@@ -389,8 +401,20 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
           albumSpan.className = "candidate-album";
           albumSpan.textContent = candidate.album ?? "";
           if (!candidate.album) albumSpan.hidden = true;
+          textWrap.append(artistSpan, songSpan, albumSpan);
 
-          li.append(artistSpan, songSpan, albumSpan);
+          // Exact per-candidate liked marker: once a search resolves we hold
+          // each candidate's real track id, so its Liked Songs membership is
+          // certain — a filled ♥ means "you already liked this one" (issue
+          // #43). Hidden until the check resolves (liked == null/undefined).
+          const heart = document.createElement("span");
+          heart.className = "candidate-liked";
+          heart.textContent = "♥";
+          heart.setAttribute("aria-hidden", "true");
+          heart.hidden = candidate.liked !== true;
+          if (candidate.liked === true) heart.title = "Already in Liked Songs";
+
+          li.append(textWrap, heart);
           li.addEventListener("click", () => this._onCandidateSelect(candidate.label));
           candidateList.append(li);
         }
@@ -440,13 +464,26 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
 
     const likeBtn = document.createElement("button");
     likeBtn.className = "history-like-btn";
-    likeBtn.textContent = "♥";
-    likeBtn.title = "Like this song";
-    likeBtn.setAttribute("aria-label", `Like ${artist} - ${title}`);
     likeBtn.addEventListener("click", onLike);
+    this._applyLikedHeart(likeBtn, "unknown", `${artist} - ${title}`);
 
     li.append(text, likeBtn);
     return li;
+  }
+
+  // Render a heart button for a given liked state: filled ♥ when the song is
+  // already a Liked Song, outline ♡ when confirmed not, and a muted outline
+  // when it could not be resolved (issue #43). The button always stays a Like
+  // affordance regardless of state.
+  private _applyLikedHeart(btn: HTMLButtonElement, liked: LikedState, label: string): void {
+    btn.textContent = liked === "liked" ? "♥" : "♡";
+    btn.classList.toggle("liked", liked === "liked");
+    btn.classList.toggle("not-liked", liked === "not_liked");
+    btn.classList.toggle("liked-unknown", liked === "unknown");
+    const suffix =
+      liked === "liked" ? " (already liked)" : liked === "unknown" ? " (like status unknown)" : "";
+    btn.title = liked === "liked" ? "Already in Liked Songs" : "Like this song";
+    btn.setAttribute("aria-label", `Like ${label}${suffix}`);
   }
 
   // The hearts go through find_like_matches, so they mirror the backing
@@ -458,7 +495,10 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     return this._searching || findState === "unavailable" || findState === undefined;
   }
 
-  private _updateNowPlayingEntry(track: { artist: string; title: string } | null): void {
+  private _updateNowPlayingEntry(
+    track: { artist: string; title: string } | null,
+    liked: LikedState
+  ): void {
     if (!this.shadowRoot) return;
     const list = this.shadowRoot.querySelector<HTMLUListElement>(".now-playing-list");
     if (!list) return;
@@ -480,7 +520,13 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     }
 
     const likeBtn = list.querySelector<HTMLButtonElement>(".history-like-btn");
-    if (likeBtn) likeBtn.disabled = this._likeDisabled();
+    if (likeBtn) {
+      // The liked state can update independently of the track (the async
+      // favorites lookup resolves after the row is built), so refresh the
+      // heart on every pass, not only when the row is rebuilt.
+      if (track) this._applyLikedHeart(likeBtn, liked, `${track.artist} - ${track.title}`);
+      likeBtn.disabled = this._likeDisabled();
+    }
   }
 
   private _updateHistory(history: PlayedTrack[]): void {
@@ -885,6 +931,18 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         color: rgba(0,0,0,.26);
         cursor: not-allowed;
       }
+      /* Liked-state hearts (issue #43): filled = already a Liked Song,
+         outline = confirmed not liked, muted outline = could not resolve. */
+      .history-like-btn.liked {
+        color: var(--error-color, #e0245e);
+      }
+      .history-like-btn.not-liked {
+        color: var(--primary-color, #03a9f4);
+      }
+      .history-like-btn.liked-unknown {
+        color: var(--secondary-text-color, #727272);
+        opacity: 0.55;
+      }
       .find-status {
         font-size: 0.85em;
         color: var(--secondary-text-color);
@@ -905,11 +963,25 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       }
       .candidate-option {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
         padding: 8px 12px;
         cursor: pointer;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
         transition: background 0.1s;
+      }
+      .candidate-text {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+      }
+      .candidate-liked {
+        flex-shrink: 0;
+        font-size: 1.1em;
+        line-height: 1;
+        color: var(--error-color, #e0245e);
       }
       .candidate-option:last-child {
         border-bottom: none;

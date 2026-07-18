@@ -65,3 +65,14 @@ SPOTIFYPLUS_DOMAIN = "spotifyplus"
 SERVICE_SPOTIFYPLUS_SEARCH_TRACKS = "search_tracks"
 SERVICE_SPOTIFYPLUS_SAVE_TRACK_FAVORITES = "save_track_favorites"
 SERVICE_SPOTIFYPLUS_ADD_PLAYLIST_ITEMS = "playlist_items_add"
+# Reports, per Spotify track id, whether the track is in the user's Liked
+# Songs. Backs the "already liked?" heart indicator (issue #43).
+SERVICE_SPOTIFYPLUS_CHECK_TRACK_FAVORITES = "check_track_favorites"
+
+# now-playing "already liked" states exposed by the sensor and rendered by the
+# card's heart. UNKNOWN means the track could not be resolved to a Spotify
+# track confidently (non-Spotify source with no matching search hit), so the
+# heart must not claim the song is unliked.
+LIKED_STATE_LIKED = "liked"
+LIKED_STATE_NOT_LIKED = "not_liked"
+LIKED_STATE_UNKNOWN = "unknown"

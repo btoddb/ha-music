@@ -24,6 +24,10 @@ class NowPlaying:
     artist: str
     title: str
     album: str | None
+    # Backend content id of the current track (e.g. Music Assistant's
+    # "spotify://track/<id>"); used to resolve an exact Spotify track id for
+    # the "already liked" heart when the source is Spotify (issue #43).
+    media_content_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +69,9 @@ class LikeCandidate:
     artist: str
     title: str
     album: str | None
+    # Whether this exact track is already in the user's Spotify Liked Songs.
+    # None until a favorites check has run (issue #43).
+    liked: bool | None = None
 
 
 def parse_named_mapping(raw: Any, *, allow_list_values: bool) -> NamedMapping:

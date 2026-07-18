@@ -660,4 +660,84 @@ describe(CARD_TYPE, () => {
     dropdown.dispatchEvent(new Event("change"));
     expect(hass.calls[0]?.data?.entity_id).toBe("select.btoddb_ha_music_music");
   });
+
+  // issue #43: the now-playing heart reflects Liked Songs membership.
+  it("fills the now-playing heart when the track is already liked", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          now_playing_liked: "liked",
+        },
+      },
+    });
+    const heart = shadow(makeCard(hass)).querySelector<HTMLButtonElement>(
+      ".now-playing-list .history-like-btn"
+    )!;
+    expect(heart.textContent).toBe("♥");
+    expect(heart.classList.contains("liked")).toBe(true);
+    expect(heart.getAttribute("aria-label")).toContain("already liked");
+  });
+
+  it("outlines the now-playing heart when the track is not liked", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          now_playing_liked: "not_liked",
+        },
+      },
+    });
+    const heart = shadow(makeCard(hass)).querySelector<HTMLButtonElement>(
+      ".now-playing-list .history-like-btn"
+    )!;
+    expect(heart.textContent).toBe("♡");
+    expect(heart.classList.contains("not-liked")).toBe(true);
+  });
+
+  it("shows a muted outline heart when liked state is unknown or absent", () => {
+    const heart = shadow(makeCard(makeHass())).querySelector<HTMLButtonElement>(
+      ".now-playing-list .history-like-btn"
+    )!;
+    expect(heart.textContent).toBe("♡");
+    expect(heart.classList.contains("liked-unknown")).toBe(true);
+  });
+
+  it("marks a candidate that is already liked with a filled heart", () => {
+    const hass = makeHass();
+    const card = makeCard(hass);
+    const root = shadow(card);
+    hass.states["select.btoddb_ha_music_like_candidate"] = {
+      state: "Neko Case — Hold On, Hold On",
+      attributes: {
+        candidates: [
+          {
+            label: "Neko Case — Hold On, Hold On",
+            artist: "Neko Case",
+            title: "Hold On, Hold On",
+            album: "Fox Confessor Brings the Flood",
+            liked: true,
+          },
+          {
+            label: "Neko Case — Hold On, Hold On (Live)",
+            artist: "Neko Case",
+            title: "Hold On, Hold On",
+            album: "Live",
+            liked: false,
+          },
+        ],
+      },
+    };
+    card.hass = hass;
+
+    const options = root.querySelectorAll(".candidate-option");
+    const firstHeart = options[0].querySelector<HTMLElement>(".candidate-liked")!;
+    const secondHeart = options[1].querySelector<HTMLElement>(".candidate-liked")!;
+    expect(firstHeart.hidden).toBe(false);
+    expect(secondHeart.hidden).toBe(true);
+  });
 });
