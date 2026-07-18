@@ -1665,9 +1665,15 @@ def test_playback_active_counts_remembered_pause_as_active() -> None:
 class _RoutedServices:
     """Records service calls and returns a per-service canned response."""
 
-    def __init__(self, responses: dict[str, dict] | None = None) -> None:
+    def __init__(
+        self,
+        responses: dict[str, dict] | None = None,
+        *,
+        raises: dict[str, Exception] | None = None,
+    ) -> None:
         self.calls: list[tuple] = []
         self._responses = responses or {}
+        self._raises = raises or {}
 
     async def async_call(
         self,
@@ -1678,6 +1684,8 @@ class _RoutedServices:
         return_response: bool = False,
     ):
         self.calls.append((domain, service, data, blocking, return_response))
+        if service in self._raises:
+            raise self._raises[service]
         return self._responses.get(service) if return_response else None
 
 
@@ -1685,10 +1693,14 @@ class _RoutedHass:
     """A fake hass whose service responses vary by service name."""
 
     def __init__(
-        self, *, states: dict | None = None, responses: dict[str, dict] | None = None
+        self,
+        *,
+        states: dict | None = None,
+        responses: dict[str, dict] | None = None,
+        raises: dict[str, Exception] | None = None,
     ) -> None:
         self.states = SimpleNamespace(get=(states or {}).get)
-        self.services = _RoutedServices(responses)
+        self.services = _RoutedServices(responses, raises=raises)
 
 
 def _favorites(**by_id: bool) -> dict:
@@ -1867,6 +1879,52 @@ def test_resolve_liked_exact_hit_skips_search() -> None:
         asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
     )
     assert [call[1] for call in hass.services.calls] == ["check_track_favorites"]
+
+
+def test_resolve_liked_degrades_to_unknown_on_unexpected_exception() -> None:
+    """A non-HomeAssistantError from a service call resolves to unknown.
+
+    Reproduces a real-world case: SpotifyPlus raises a bare KeyError (not
+    HomeAssistantError) when its config entry is mid-reload. Before this was
+    widened, the exception escaped the background resolve task entirely
+    (asyncio drops it as "Task exception was never retrieved") and the heart
+    stuck at unknown for the rest of the track instead of degrading cleanly.
+    """
+
+    hass = _RoutedHass(
+        responses={},
+        raises={"check_track_favorites": KeyError("spotifyplus")},
+    )
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_UNKNOWN
+    )
+    # Not cached, so a later retry (once the transient failure clears) works.
+    assert controller._liked_cache == {}
+
+
+def test_find_like_matches_annotate_degrades_on_unexpected_exception() -> None:
+    """The like flow keeps working (unannotated) if favorites-check raises."""
+
+    hass = _RoutedHass(
+        responses={"search_tracks": _SEARCH_RESPONSE},
+        raises={"check_track_favorites": KeyError("spotifyplus")},
+    )
+    controller = _liked_controller(
+        hass,
+        states_attrs={ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+    )
+
+    asyncio.run(controller.async_find_like_matches(artist="Artist", title="Song"))
+    assert [c.liked for c in controller.like_candidates] == [None, None]
 
 
 def test_resolve_liked_fuzzy_search_when_not_spotify() -> None:

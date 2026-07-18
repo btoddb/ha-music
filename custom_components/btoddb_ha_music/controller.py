@@ -793,7 +793,7 @@ class MusicController:
             favorites = await self._async_check_track_favorites(
                 candidate.track_id for candidate in candidates
             )
-        except HomeAssistantError as err:
+        except Exception as err:  # noqa: BLE001 - see _async_compute_liked
             _LOGGER.debug("Could not check track favorites: %s", err)
             return candidates
         return [
@@ -879,7 +879,16 @@ class MusicController:
             if any(favorites.get(candidate.track_id) for candidate in matches):
                 return LIKED_STATE_LIKED
             return LIKED_STATE_NOT_LIKED
-        except HomeAssistantError as err:
+        except Exception as err:  # noqa: BLE001
+            # Broad on purpose: this runs as a fire-and-forget background task
+            # (sensor.py's _async_resolve_liked), so an exception that escapes
+            # here isn't just a bad heart state — it's silently dropped by
+            # asyncio ("Task exception was never retrieved") and the heart
+            # gets stuck at "unknown" until the track changes. Observed in
+            # practice: SpotifyPlus raises a bare KeyError (not
+            # HomeAssistantError) when its config entry is mid-reload, a
+            # transient race this heart check should degrade through, not die
+            # on.
             _LOGGER.debug("Could not resolve liked state: %s", err)
             return LIKED_STATE_UNKNOWN
 
