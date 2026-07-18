@@ -146,23 +146,30 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     const nowPlaying = document.createElement("div");
     nowPlaying.className = "section now-playing-section";
 
-    // The History title is always visible; the chevron shows/hides the list.
+    // The History title is a static label; the last 2 plays always show, and
+    // a small chevron tab hanging off the bottom edge of the box expands it
+    // to reveal older entries.
+    const historyLabel = this._makeSectionLabel("History");
+
+    const historyList = document.createElement("ul");
+    historyList.className = "track-list history-list";
+
     const historyToggle = document.createElement("button");
     historyToggle.className = "history-toggle";
     historyToggle.setAttribute("aria-expanded", "false");
-    const historyLabel = this._makeSectionLabel("History");
-    historyLabel.classList.add("history-label");
+    historyToggle.setAttribute("aria-label", "Show more history");
     const chevron = document.createElement("span");
     chevron.className = "chevron";
     chevron.setAttribute("aria-hidden", "true");
-    historyToggle.append(historyLabel, chevron);
+    historyToggle.append(chevron);
     historyToggle.addEventListener("click", () => {
       this._historyExpanded = !this._historyExpanded;
       this._update();
     });
 
-    const historyList = document.createElement("ul");
-    historyList.className = "track-list history-list";
+    const historyWrap = document.createElement("div");
+    historyWrap.className = "history-wrap";
+    historyWrap.append(historyList, historyToggle);
 
     // Now Playing renders as a single history-style entry (same outline as
     // the history list) so the currently playing track and the history read
@@ -173,8 +180,8 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
     nowPlaying.append(
       this._makeSectionLabel("Now Playing"),
       nowPlayingList,
-      historyToggle,
-      historyList
+      historyLabel,
+      historyWrap
     );
 
     // --- Music source selector ---
@@ -548,6 +555,10 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       toggle.classList.toggle("hidden", !hasOverflow);
       toggle.setAttribute("aria-expanded", String(this._historyExpanded));
       toggle.classList.toggle("expanded", this._historyExpanded);
+      toggle.setAttribute(
+        "aria-label",
+        this._historyExpanded ? "Show less history" : "Show more history"
+      );
     }
 
     const list = this.shadowRoot.querySelector<HTMLUListElement>(".history-list");
@@ -873,33 +884,39 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
         box-shadow: none;
         cursor: not-allowed;
       }
+      .history-wrap {
+        position: relative;
+      }
       .history-toggle {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        transform: translate(-50%, 50%);
+        width: 22px;
+        height: 22px;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        margin-top: 8px;
+        justify-content: center;
         padding: 0;
-        border: none;
-        background: none;
+        margin: 0;
+        border: 1px solid var(--divider-color, #e0e0e0);
+        border-radius: 50%;
+        background: var(--card-background-color, #fff);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
         cursor: pointer;
-        font: inherit;
-        text-align: left;
-      }
-      .history-toggle .history-label {
-        margin-bottom: 0;
       }
       .chevron {
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         border-right: 2px solid var(--secondary-text-color);
         border-bottom: 2px solid var(--secondary-text-color);
         transform: rotate(45deg);
         transition: transform 0.15s ease;
-        margin-right: 4px;
+        margin-top: -3px;
       }
       .history-toggle.expanded .chevron {
         transform: rotate(-135deg);
+        margin-top: 3px;
       }
       .track-list {
         list-style: none;

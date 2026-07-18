@@ -558,7 +558,8 @@ describe(CARD_TYPE, () => {
     const root = shadow(card);
 
     const toggle = root.querySelector<HTMLButtonElement>(".history-toggle")!;
-    expect(toggle.querySelector(".history-label")?.textContent).toBe("History");
+    const labels = Array.from(root.querySelectorAll(".section-label")).map((el) => el.textContent);
+    expect(labels).toContain("History");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(toggle.classList.contains("hidden")).toBe(false);
 
