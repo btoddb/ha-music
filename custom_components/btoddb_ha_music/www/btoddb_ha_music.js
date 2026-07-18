@@ -1,10 +1,13 @@
 (function () {
     'use strict';
 
-    // v0.0.31
-    const CARD_VERSION = "v0.0.31";
+    // v0.0.32
+    const CARD_VERSION = "v0.0.32";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
+    // Coerce a liked attribute value (sensor attribute or history entry) to a
+    // renderable state; anything unrecognized stays a neutral "unknown" heart.
+    const toLikedState = (value) => value === "liked" || value === "not_liked" ? value : "unknown";
     class BtoddbHaMusicLikeCard extends HTMLElement {
         _config = {};
         _hass = null;
@@ -205,8 +208,7 @@
                     title: known(title) ? title : "unknown",
                 }
                 : null;
-            const likedAttr = nowPlaying?.attributes?.now_playing_liked;
-            const nowPlayingLiked = likedAttr === "liked" || likedAttr === "not_liked" ? likedAttr : "unknown";
+            const nowPlayingLiked = toLikedState(nowPlaying?.attributes?.now_playing_liked);
             this._updateNowPlayingEntry(currentTrack, nowPlayingLiked);
             // History (from the now-playing sensor's history attribute, newest first)
             const history = nowPlaying?.attributes?.history ?? [];
@@ -417,10 +419,21 @@
                     list.append(li);
                 }
             }
+            // Liked state can arrive after the rows are built (the async favorites
+            // lookup, or a confirmed like stamping older entries), so refresh each
+            // row's heart on every pass — rows are rendered in history order.
             const likeDisabled = this._likeDisabled();
             list
-                .querySelectorAll(".history-like-btn")
-                .forEach((btn) => (btn.disabled = likeDisabled));
+                .querySelectorAll(".history-entry")
+                .forEach((li, index) => {
+                const btn = li.querySelector(".history-like-btn");
+                if (!btn)
+                    return;
+                btn.disabled = likeDisabled;
+                const track = history[index];
+                if (track)
+                    this._applyLikedHeart(btn, toLikedState(track.liked), `${track.artist} - ${track.title}`);
+            });
         }
         _updateDropdown(selector, resolved) {
             if (!this.shadowRoot)
