@@ -27,11 +27,16 @@ cd "$CARD_DIR"
 echo "Installing dependencies..."
 npm install
 
-# --- 2. Bump patch version (package.json) and sync the console banner so you can
+# --- 2. Set the version (package.json) and sync the console banner so you can
 #        confirm in the browser console which build actually loaded. The version is
-#        compiled into the bundle, so it must be bumped before the build. Back up the
+#        compiled into the bundle, so it must be set before the build. Back up the
 #        two touched files and roll them back if the build/deploy fails, so a broken
-#        build never leaves a bumped-but-unbuilt (dirty, inconsistent) tree. ---
+#        build never leaves a bumped-but-unbuilt (dirty, inconsistent) tree.
+#
+#        If a version is passed as $1 (the release flow passes the tag it's about to
+#        commit), use it verbatim so the card version can never drift from the
+#        manifest/tag. Otherwise (ad hoc local runs), bump package.json's own patch
+#        by one for convenience. ---
 PKG_BACKUP="$(mktemp)"
 LOCK_BACKUP="$(mktemp)"
 IDX_BACKUP="$(mktemp)"
@@ -48,7 +53,11 @@ rollback() {
 trap rollback ERR
 
 OLD_VERSION=$(python3 -c "import json; print(json.load(open('package.json'))['version'])")
-NEW_VERSION=$(python3 -c "p='${OLD_VERSION}'.split('.'); p[2]=str(int(p[2])+1); print('.'.join(p))")
+if [[ -n "${1:-}" ]]; then
+    NEW_VERSION="${1#v}"
+else
+    NEW_VERSION=$(python3 -c "p='${OLD_VERSION}'.split('.'); p[2]=str(int(p[2])+1); print('.'.join(p))")
+fi
 python3 - "$NEW_VERSION" <<'PYEOF'
 import json, re, sys
 new = sys.argv[1]

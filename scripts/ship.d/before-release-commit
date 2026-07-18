@@ -16,7 +16,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
     exit 0
 fi
 
-"$REPO_ROOT/scripts/deploy-card"
+"$REPO_ROOT/scripts/deploy-card" "$VERSION_TAG"
 
 tmp="$(mktemp)"
 jq --arg v "$VERSION_TAG" '.version = $v' "$MANIFEST" > "$tmp"
