@@ -589,6 +589,34 @@ describe(CARD_TYPE, () => {
     expect(root.querySelector(".history-list .history-empty")).toBeNull();
   });
 
+  it("renders history hearts from each entry's carried liked state", () => {
+    const hass = makeHass({
+      "sensor.btoddb_ha_music_now_playing": {
+        state: "playing",
+        attributes: {
+          artist: "Neko Case",
+          title: "Hold On, Hold On",
+          history: [
+            { artist: "Artist C", title: "Song C", album: null, played_at: "2026-07-13T03:00:00", liked: "liked" },
+            { artist: "Artist B", title: "Song B", album: null, played_at: "2026-07-13T02:00:00", liked: "not_liked" },
+            { artist: "Artist A", title: "Song A", album: null, played_at: "2026-07-13T01:00:00", liked: null },
+          ],
+        },
+      },
+    });
+    const card = makeCard(hass);
+    const root = shadow(card);
+    root.querySelector<HTMLButtonElement>(".history-toggle")!.click();
+
+    const hearts = Array.from(
+      root.querySelectorAll<HTMLButtonElement>(".history-list .history-like-btn")
+    );
+    expect(hearts.map((btn) => btn.textContent)).toEqual(["♥", "♡", "♡"]);
+    expect(hearts.map((btn) => btn.classList.contains("liked"))).toEqual([true, false, false]);
+    expect(hearts.map((btn) => btn.classList.contains("not-liked"))).toEqual([false, true, false]);
+    expect(hearts.map((btn) => btn.classList.contains("liked-unknown"))).toEqual([false, false, true]);
+  });
+
   it("shows an empty-history row when nothing has played yet", () => {
     const card = makeCard(makeHass());
     const root = shadow(card);

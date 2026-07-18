@@ -88,7 +88,7 @@ def test_sensor_publishes_history_on_track_transitions() -> None:
     assert history[0]["album"] is None
     assert history[2]["album"] == "Album A"
     for track in history:
-        assert set(track) == {"artist", "title", "album", "played_at"}
+        assert set(track) == {"artist", "title", "album", "played_at", "liked"}
         assert track["played_at"]
     assert sensor.extra_state_attributes["title"] == "Song C"
 
@@ -214,11 +214,36 @@ def test_sensor_resolves_liked_from_exact_content_id() -> None:
     writes: list[int] = []
     sensor.async_write_ha_state = lambda: writes.append(1)
 
-    sensor._liked_key = ("Artist A", "Song A")
-    asyncio.run(sensor._async_resolve_liked(("Artist A", "Song A")))
+    key = ("Artist A", "Song A", "spotify://track/abc", 0)
+    sensor._liked_key = key
+    asyncio.run(sensor._async_resolve_liked(key))
 
     assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_LIKED
     assert writes == [1]
+
+
+def test_sensor_mirrors_resolved_liked_into_history() -> None:
+    """The resolved heart state lands on the track's history entry.
+
+    Otherwise a liked now-playing track would flip back to a neutral heart
+    the moment it moves into the history list.
+    """
+
+    import asyncio
+
+    sensor, _hass = _liked_sensor_fixture(
+        "spotify://track/abc",
+        {"check_track_favorites": {"result": {"spotify:track:abc": True}}},
+    )
+    sensor.async_write_ha_state = lambda: None
+
+    key = ("Artist A", "Song A", "spotify://track/abc", 0)
+    sensor._liked_key = key
+    asyncio.run(sensor._async_resolve_liked(key))
+
+    assert sensor._controller.play_history[0].liked == LIKED_STATE_LIKED
+    sensor._update_now_playing()
+    assert sensor.extra_state_attributes["history"][0]["liked"] == LIKED_STATE_LIKED
 
 
 def test_sensor_sync_liked_skips_scheduling_without_spotify() -> None:

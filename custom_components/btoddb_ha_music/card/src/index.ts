@@ -40,7 +40,15 @@ interface PlayedTrack {
   title: string;
   album: string | null;
   played_at: string;
+  // Liked Songs state resolved while the track was playing, carried into
+  // history so the heart doesn't reset to neutral ("liked"/"not_liked"/null).
+  liked?: string | null;
 }
+
+// Coerce a liked attribute value (sensor attribute or history entry) to a
+// renderable state; anything unrecognized stays a neutral "unknown" heart.
+const toLikedState = (value: unknown): LikedState =>
+  value === "liked" || value === "not_liked" ? value : "unknown";
 
 interface ResolvedEntity {
   entityId: string;
@@ -300,9 +308,7 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
             title: known(title) ? title : "unknown",
           }
         : null;
-    const likedAttr = nowPlaying?.attributes?.now_playing_liked;
-    const nowPlayingLiked: LikedState =
-      likedAttr === "liked" || likedAttr === "not_liked" ? likedAttr : "unknown";
+    const nowPlayingLiked = toLikedState(nowPlaying?.attributes?.now_playing_liked);
     this._updateNowPlayingEntry(currentTrack, nowPlayingLiked);
 
     // History (from the now-playing sensor's history attribute, newest first)
@@ -569,10 +575,24 @@ class BtoddbHaMusicLikeCard extends HTMLElement {
       }
     }
 
+    // Liked state can arrive after the rows are built (the async favorites
+    // lookup, or a confirmed like stamping older entries), so refresh each
+    // row's heart on every pass — rows are rendered in history order.
     const likeDisabled = this._likeDisabled();
     list
-      .querySelectorAll<HTMLButtonElement>(".history-like-btn")
-      .forEach((btn) => (btn.disabled = likeDisabled));
+      .querySelectorAll<HTMLLIElement>(".history-entry")
+      .forEach((li, index) => {
+        const btn = li.querySelector<HTMLButtonElement>(".history-like-btn");
+        if (!btn) return;
+        btn.disabled = likeDisabled;
+        const track = history[index];
+        if (track)
+          this._applyLikedHeart(
+            btn,
+            toLikedState(track.liked),
+            `${track.artist} - ${track.title}`
+          );
+      });
   }
 
   private _updateDropdown(selector: string, resolved: ResolvedEntity | null): void {

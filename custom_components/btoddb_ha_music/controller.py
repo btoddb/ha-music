@@ -111,6 +111,10 @@ class MusicController:
         # recordings that share an artist/title do not collide and a track that
         # gains a Spotify id resolves afresh (PR #44 review).
         self._liked_cache: dict[tuple[str, ...], str] = {}
+        # Bumped every time a like is confirmed. The now-playing sensor folds
+        # it into its resolution key, so the heart re-resolves after a like
+        # even though the playing track itself did not change.
+        self.liked_epoch = 0
         # Kind of the last media this controller started ("radio_station" or
         # "playlist"), cleared on stop. Pause/resume only make sense for
         # playlists, so their buttons key their availability off this.
@@ -593,10 +597,33 @@ class MusicController:
                 current.title,
                 current.album,
                 dt_util.utcnow().isoformat(),
+                # A replayed track's liked state is often already cached; stamp
+                # it now so the entry never flashes an unresolved heart.
+                liked=self._liked_cache.get(_liked_cache_key(current)),
             ),
         )
         del self.play_history[PLAY_HISTORY_LIMIT:]
         self._notify_listeners()
+
+    @callback
+    def set_history_liked(self, artist: str, title: str, state: str) -> None:
+        """Stamp a resolved liked state onto matching play-history entries.
+
+        Called by the now-playing sensor once the heart resolves, so the
+        state survives the track's move from Now Playing into the history
+        list instead of falling back to an unresolved heart. Unconfident
+        results are not stamped — they would only erase a better answer.
+        """
+
+        if state == LIKED_STATE_UNKNOWN:
+            return
+        changed = False
+        for index, track in enumerate(self.play_history):
+            if (track.artist, track.title) == (artist, title) and track.liked != state:
+                self.play_history[index] = replace(track, liked=state)
+                changed = True
+        if changed:
+            self._notify_listeners()
 
     async def _async_search_tracks(
         self, artist: str, title: str
@@ -729,8 +756,15 @@ class MusicController:
                     err,
                 )
         # A just-liked track invalidates any cached "not liked" heart state,
-        # so the next resolve re-checks against Spotify (issue #43).
+        # so the next resolve re-checks against Spotify (issue #43). Bumping
+        # the epoch makes the sensor re-resolve the now-playing heart even
+        # though the track didn't change, and history entries for the same
+        # song flip to liked immediately.
         self._liked_cache.clear()
+        self.liked_epoch += 1
+        for index, track in enumerate(self.play_history):
+            if _tracks_match(track.artist, track.title, candidate):
+                self.play_history[index] = replace(track, liked=LIKED_STATE_LIKED)
         self._clear_like_candidates()
 
     async def async_cancel_like(self) -> None:
@@ -774,10 +808,13 @@ class MusicController:
         their favorites membership (issue #43):
 
         - A Spotify-sourced track carries its exact id in ``media_content_id``,
-          so it is checked directly.
-        - Otherwise the track's artist/title are searched on Spotify and only
-          candidates whose artist AND title match are checked; the song counts
-          as liked if any matching candidate is a favorite.
+          so it is checked directly; a hit resolves to liked immediately.
+        - Otherwise — including when the exact id is not a favorite, since
+          Spotify catalogs the same recording under multiple track ids (album
+          vs deluxe/greatest-hits releases) — the track's artist/title are
+          searched on Spotify and only candidates whose artist AND title match
+          are checked; the song counts as liked if any matching candidate is a
+          favorite.
 
         Returns ``LIKED_STATE_UNKNOWN`` when there is no Spotify entity, nothing
         identifiable is playing, or no confident match is found, so the heart
@@ -810,15 +847,17 @@ class MusicController:
 
         track_id = _extract_spotify_track_id(now_playing.media_content_id)
         try:
+            exact_not_liked = False
             if track_id is not None:
                 favorites = await self._async_check_track_favorites([track_id])
-                if track_id in favorites:
-                    return (
-                        LIKED_STATE_LIKED
-                        if favorites[track_id]
-                        else LIKED_STATE_NOT_LIKED
-                    )
-                return LIKED_STATE_UNKNOWN
+                if favorites.get(track_id):
+                    return LIKED_STATE_LIKED
+                # The played copy not being a favorite doesn't mean the song
+                # isn't liked: Spotify catalogs the same recording under
+                # multiple track ids (album vs deluxe/greatest-hits releases,
+                # same ISRC), and the Liked copy may be a different one. Fall
+                # through to the artist/title search to check the duplicates.
+                exact_not_liked = track_id in favorites
 
             candidates = await self._async_search_tracks(
                 now_playing.artist, now_playing.title
@@ -829,12 +868,14 @@ class MusicController:
                 if _tracks_match(now_playing.artist, now_playing.title, candidate)
             ]
             if not matches:
-                return LIKED_STATE_UNKNOWN
+                # No fuzzy signal — but a confirmed miss on the exact played id
+                # is still a confident "not liked".
+                return LIKED_STATE_NOT_LIKED if exact_not_liked else LIKED_STATE_UNKNOWN
             favorites = await self._async_check_track_favorites(
                 candidate.track_id for candidate in matches
             )
             if not favorites:
-                return LIKED_STATE_UNKNOWN
+                return LIKED_STATE_NOT_LIKED if exact_not_liked else LIKED_STATE_UNKNOWN
             if any(favorites.get(candidate.track_id) for candidate in matches):
                 return LIKED_STATE_LIKED
             return LIKED_STATE_NOT_LIKED

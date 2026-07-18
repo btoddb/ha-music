@@ -1793,9 +1793,14 @@ def test_resolve_liked_uses_exact_content_id_when_spotify() -> None:
 
 
 def test_resolve_liked_exact_content_id_not_liked() -> None:
-    """An exact-id check that returns False resolves to not_liked."""
+    """An exact-id miss with no duplicate copies resolves to not_liked."""
 
-    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=False)})
+    hass = _RoutedHass(
+        responses={
+            "check_track_favorites": _favorites(abc=False),
+            "search_tracks": _NON_MATCHING_SEARCH,
+        }
+    )
     controller = _liked_controller(
         hass,
         states_attrs={
@@ -1809,6 +1814,59 @@ def test_resolve_liked_exact_content_id_not_liked() -> None:
         asyncio.run(controller.async_resolve_now_playing_liked())
         == LIKED_STATE_NOT_LIKED
     )
+
+
+def test_resolve_liked_exact_miss_falls_back_to_fuzzy_duplicates() -> None:
+    """A liked duplicate copy of the played track still lights the heart.
+
+    Spotify catalogs the same recording under multiple track ids (album vs
+    deluxe releases, same ISRC). The played copy not being a favorite must
+    fall through to the artist/title search, which finds the liked copy.
+    """
+
+    hass = _RoutedHass(
+        responses={
+            "search_tracks": _SEARCH_RESPONSE,
+            "check_track_favorites": _favorites(abc=False, **{"1": False, "2": True}),
+        }
+    )
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
+    services = [call[1] for call in hass.services.calls]
+    assert services == [
+        "check_track_favorites",
+        "search_tracks",
+        "check_track_favorites",
+    ]
+
+
+def test_resolve_liked_exact_hit_skips_search() -> None:
+    """A favorite exact id resolves to liked without a search."""
+
+    hass = _RoutedHass(responses={"check_track_favorites": _favorites(abc=True)})
+    controller = _liked_controller(
+        hass,
+        states_attrs={
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/abc",
+        },
+    )
+
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    )
+    assert [call[1] for call in hass.services.calls] == ["check_track_favorites"]
 
 
 def test_resolve_liked_fuzzy_search_when_not_spotify() -> None:
@@ -1926,6 +1984,64 @@ def test_confirm_like_clears_liked_cache() -> None:
     controller.selected_like_candidate = controller.like_candidates[0]
     asyncio.run(controller.async_confirm_like())
     assert controller._liked_cache == {}
+
+
+def test_set_history_liked_stamps_matching_entries() -> None:
+    """A resolved liked state lands on every history entry for that track."""
+
+    controller = _controller()
+    _record(controller, _now_playing("Artist A", "Song A"))
+    _record(controller, _now_playing("Artist B", "Song B"))
+
+    events: list[str] = []
+    controller.async_add_listener(lambda: events.append("notified"))
+
+    controller.set_history_liked("Artist A", "Song A", LIKED_STATE_LIKED)
+    assert [(t.title, t.liked) for t in controller.play_history] == [
+        ("Song B", None),
+        ("Song A", LIKED_STATE_LIKED),
+    ]
+    assert events == ["notified"]
+
+    # Unknown never overwrites, and a no-op change stays silent.
+    events.clear()
+    controller.set_history_liked("Artist A", "Song A", LIKED_STATE_UNKNOWN)
+    controller.set_history_liked("Artist A", "Song A", LIKED_STATE_LIKED)
+    assert controller.play_history[1].liked == LIKED_STATE_LIKED
+    assert events == []
+
+
+def test_record_now_playing_stamps_liked_from_cache() -> None:
+    """A replayed track whose liked state is cached is stamped on insert."""
+
+    controller = _controller()
+    controller._liked_cache[("meta", "Artist", "Song")] = LIKED_STATE_LIKED
+
+    _record(controller, _now_playing("Artist", "Song"))
+    assert controller.play_history[0].liked == LIKED_STATE_LIKED
+
+
+def test_confirm_like_stamps_history_and_bumps_epoch() -> None:
+    """Confirming a like flips matching history hearts and re-resolves now playing."""
+
+    hass = _RoutedHass()
+    controller = _liked_controller(
+        hass,
+        states_attrs={ATTR_MEDIA_ARTIST: "Artist", ATTR_MEDIA_TITLE: "Song"},
+    )
+    _record(controller, _now_playing("Artist", "Song"))
+    _record(controller, _now_playing("Other", "Track"))
+
+    controller.like_candidates = [_candidate("abc", "Artist", "Song")]
+    controller.selected_like_candidate = controller.like_candidates[0]
+    epoch = controller.liked_epoch
+    asyncio.run(controller.async_confirm_like())
+
+    assert controller.liked_epoch == epoch + 1
+    assert [(t.title, t.liked) for t in controller.play_history] == [
+        ("Track", None),
+        ("Song", LIKED_STATE_LIKED),
+    ]
 
 
 _NON_MATCHING_SEARCH = {

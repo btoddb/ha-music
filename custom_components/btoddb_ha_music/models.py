@@ -47,6 +47,10 @@ class PlayedTrack:
     title: str
     album: str | None
     played_at: str  # ISO-8601 UTC timestamp of when the track was recorded
+    # Resolved Liked Songs state ("liked"/"not_liked") carried over from the
+    # now-playing heart, so history entries keep showing it after the track
+    # moves on; None when it was never confidently resolved.
+    liked: str | None = None
 
     def as_dict(self) -> dict[str, str | None]:
         """Serialize for the now-playing sensor's history attribute."""
@@ -56,6 +60,7 @@ class PlayedTrack:
             "title": self.title,
             "album": self.album,
             "played_at": self.played_at,
+            "liked": self.liked,
         }
 
 
