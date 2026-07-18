@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    // v0.0.35
-    const CARD_VERSION = "v0.0.35";
+    // v0.0.36
+    const CARD_VERSION = "v0.0.36";
     const CARD_TYPE = "btoddb-ha-music-like-card";
     console.info(`%c BTODDB-HA-MUSIC-LIKE-CARD %c ${CARD_VERSION} `, "color: white; background: #00b4d8; font-weight: 700;", "color: #00b4d8; background: white; font-weight: 700;");
     // Coerce a liked attribute value (sensor attribute or history entry) to a
@@ -100,7 +100,7 @@
                 this._update();
             });
             const historyList = document.createElement("ul");
-            historyList.className = "track-list history-list hidden";
+            historyList.className = "track-list history-list";
             // Now Playing renders as a single history-style entry (same outline as
             // the history list) so the currently playing track and the history read
             // as one timeline (issue #40).
@@ -388,18 +388,22 @@
                 likeBtn.disabled = this._likeDisabled();
             }
         }
+        // The most recent PINNED_HISTORY_COUNT tracks always show; the chevron
+        // only expands/collapses the older ones beneath them.
+        static PINNED_HISTORY_COUNT = 2;
         _updateHistory(history) {
             if (!this.shadowRoot)
                 return;
             const toggle = this.shadowRoot.querySelector(".history-toggle");
+            const hasOverflow = history.length > BtoddbHaMusicLikeCard.PINNED_HISTORY_COUNT;
             if (toggle) {
+                toggle.classList.toggle("hidden", !hasOverflow);
                 toggle.setAttribute("aria-expanded", String(this._historyExpanded));
                 toggle.classList.toggle("expanded", this._historyExpanded);
             }
             const list = this.shadowRoot.querySelector(".history-list");
             if (!list)
                 return;
-            list.classList.toggle("hidden", !this._historyExpanded);
             const key = (t) => `${t.artist}|${t.title}|${t.played_at}`;
             const existingKeys = Array.from(list.querySelectorAll(".history-entry")).map((li) => li.dataset.key ?? "");
             const hadEmptyRow = list.querySelector(".history-empty") !== null;
@@ -410,7 +414,7 @@
                 if (history.length === 0) {
                     const empty = document.createElement("li");
                     empty.className = "history-empty";
-                    empty.textContent = "No songs played yet";
+                    empty.textContent = "This space will fill up as you play songs";
                     list.append(empty);
                 }
                 for (const track of history) {
@@ -419,6 +423,13 @@
                     list.append(li);
                 }
             }
+            // The first PINNED_HISTORY_COUNT rows always show; the rest stay hidden
+            // until the chevron expands them.
+            list
+                .querySelectorAll(".history-entry")
+                .forEach((li, index) => {
+                li.classList.toggle("hidden", index >= BtoddbHaMusicLikeCard.PINNED_HISTORY_COUNT && !this._historyExpanded);
+            });
             // Liked state can arrive after the rows are built (the async favorites
             // lookup, or a confirmed like stamping older entries), so refresh each
             // row's heart on every pass — rows are rendered in history order.
@@ -712,6 +723,9 @@
       .history-entry:last-child {
         border-bottom: none;
       }
+      .history-entry.hidden {
+        display: none;
+      }
       .history-text {
         display: flex;
         flex-direction: column;
@@ -774,7 +788,8 @@
         text-align: center;
       }
       .find-status.hidden,
-      .like-section.hidden {
+      .like-section.hidden,
+      .history-toggle.hidden {
         display: none;
       }
       .candidate-list {
