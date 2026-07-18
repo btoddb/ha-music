@@ -1784,6 +1784,25 @@ def test_tracks_match_ignores_feat_and_punctuation() -> None:
     )
 
 
+def test_tracks_match_ignores_dash_remaster_and_live_suffixes() -> None:
+    """Reissue/remaster and live-recording hyphen suffixes do not defeat a match."""
+
+    assert _tracks_match(
+        "Van Morrison",
+        "Someone Like You",
+        _candidate("1", "Van Morrison", "Someone Like You - 2008 Remaster"),
+    )
+    assert _tracks_match(
+        "Artist",
+        "Song",
+        _candidate("1", "Artist", "Song - Live at Wembley"),
+    )
+    # A genuine hyphenated title is left intact when no qualifier follows.
+    assert not _tracks_match(
+        "Artist", "Song - Reprise", _candidate("1", "Artist", "Other Song")
+    )
+
+
 def test_resolve_liked_uses_exact_content_id_when_spotify() -> None:
     """A Spotify-sourced track is checked by its exact id, no search."""
 

@@ -1069,6 +1069,16 @@ def _liked_cache_key(now_playing: NowPlaying) -> tuple[str, ...]:
 # feat/with clauses are dropped before comparing titles so metadata noise does
 # not defeat an otherwise exact match.
 _STRIP_BRACKETS = re.compile(r"[(\[{].*?[)\]}]")
+# Catalog reissues often carry a hyphen-suffix instead of a bracketed one, e.g.
+# "Someone Like You - 2008 Remaster" or "... - Live at Wembley". Only strip
+# when a known qualifier keyword follows the dash, so a title that legitimately
+# uses " - " as punctuation is left alone.
+_STRIP_DASH_SUFFIX = re.compile(
+    r"\s+-\s+.*\b(?:remaster(?:ed)?|live|mono|stereo|version|edit|mix|single"
+    r"|bonus|extended|radio|demo|acoustic|instrumental|explicit|deluxe"
+    r"|anniversary)\b.*$",
+    re.IGNORECASE,
+)
 _STRIP_FEAT = re.compile(r"\b(?:feat|ft|featuring|with)\b.*", re.IGNORECASE)
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 # Separators that join multiple artists in a single display string, across the
@@ -1080,6 +1090,7 @@ def _normalize_text(text: str) -> str:
     """Lowercase and strip punctuation/qualifiers for fuzzy comparison."""
 
     lowered = _STRIP_BRACKETS.sub(" ", text.casefold())
+    lowered = _STRIP_DASH_SUFFIX.sub(" ", lowered)
     lowered = _STRIP_FEAT.sub(" ", lowered)
     return " ".join(_NON_ALNUM.sub(" ", lowered).split())
 
