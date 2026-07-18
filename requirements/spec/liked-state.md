@@ -29,10 +29,15 @@ source, resolution must work without an exact Spotify track id.
   matching search hit — so the heart never claims an unresolved track is
   unliked. The lookup runs asynchronously when the now-playing track changes;
   the attribute reads `unknown` until it resolves.
-- **constraint LS-5** Confident results (`liked`/`not_liked`) are cached per
-  `(artist, title)` so a track is not re-searched as the media player churns
-  state; `unknown` is not cached (richer metadata may arrive), and a
-  `confirm_like` clears the cache so a just-liked track re-resolves.
+- **constraint LS-5** Confident results (`liked`/`not_liked`) are cached so a
+  track is not re-searched as the media player churns state; `unknown` is not
+  cached (richer metadata may arrive), and a `confirm_like` clears the cache so
+  a just-liked track re-resolves. The cache and the sensor's change-detection
+  identity are keyed on the exact Spotify track id when one is available and on
+  `(artist, title)` otherwise, so two recordings that share an artist/title do
+  not collide and a track whose metadata later gains a Spotify `media_content_id`
+  re-resolves via the exact path instead of keeping a stale fuzzy result
+  (PR #44 review).
 - **constraint LS-6** The like-candidate select's `candidates` attribute
   carries a per-candidate `liked` boolean (or null before the check runs).
   Because a chosen candidate has an exact track id, this membership is exact,

@@ -104,10 +104,13 @@ class MusicController:
         self.like_playlist_id = _normalize_playlist_id(data.get(CONF_LIKE_PLAYLIST_ID))
         self.like_candidates: list[LikeCandidate] = []
         self.selected_like_candidate: LikeCandidate | None = None
-        # Cache of resolved "already liked" state keyed on (artist, title), so
-        # the same now-playing track is not searched/checked against Spotify
-        # repeatedly as the media player churns state (issue #43).
-        self._liked_cache: dict[tuple[str, str], str] = {}
+        # Cache of resolved "already liked" state, so the same now-playing
+        # track is not searched/checked against Spotify repeatedly as the media
+        # player churns state (issue #43). Keyed on the exact Spotify track id
+        # when one is available and on (artist, title) otherwise, so distinct
+        # recordings that share an artist/title do not collide and a track that
+        # gains a Spotify id resolves afresh (PR #44 review).
+        self._liked_cache: dict[tuple[str, ...], str] = {}
         # Kind of the last media this controller started ("radio_station" or
         # "playlist"), cleared on stop. Pause/resume only make sense for
         # playlists, so their buttons key their availability off this.
@@ -788,7 +791,7 @@ class MusicController:
         if artist == "unknown" or title == "unknown":
             return LIKED_STATE_UNKNOWN
 
-        cache_key = (artist, title)
+        cache_key = _liked_cache_key(now_playing)
         cached = self._liked_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -993,6 +996,21 @@ def _extract_spotify_track_id(content_id: Any) -> str | None:
         track_id = value[len("spotify:track:") :].split("?", 1)[0]
         return track_id if track_id.isalnum() else None
     return None
+
+
+def _liked_cache_key(now_playing: NowPlaying) -> tuple[str, ...]:
+    """Identity under which a track's liked state is cached.
+
+    Prefers the exact Spotify track id (so two recordings sharing an
+    artist/title stay distinct, and a track that later gains a Spotify id
+    resolves under a new key rather than reusing a fuzzy result); falls back to
+    (artist, title) for non-Spotify sources (PR #44 review).
+    """
+
+    track_id = _extract_spotify_track_id(now_playing.media_content_id)
+    if track_id is not None:
+        return ("id", track_id)
+    return ("meta", now_playing.artist, now_playing.title)
 
 
 # Bracketed qualifiers — "(feat. X)", "[Remastered]" — and trailing

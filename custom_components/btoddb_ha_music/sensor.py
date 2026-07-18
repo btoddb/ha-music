@@ -27,10 +27,13 @@ class NowPlayingSensor(MusicEntity, SensorEntity):
         """Initialize the sensor."""
 
         super().__init__(controller, "now_playing")
-        # (artist, title) of the track whose liked state is currently reflected
-        # in `_liked_state`; None when nothing resolvable is playing. Guards the
-        # async resolve so it only runs when the track actually changes (#43).
-        self._liked_key: tuple[str, str] | None = None
+        # Identity of the track whose liked state is currently reflected in
+        # `_liked_state`; None when nothing resolvable is playing. Includes the
+        # media_content_id so a metadata revision that adds an exact Spotify
+        # track id re-triggers resolution instead of keeping a stale fuzzy
+        # result (PR #44 review). Guards the async resolve so it only runs when
+        # the track's resolvable identity actually changes (issue #43).
+        self._liked_key: tuple[str, str, str | None] | None = None
         self._liked_state = LIKED_STATE_UNKNOWN
         self._update_now_playing()
 
@@ -74,7 +77,11 @@ class NowPlayingSensor(MusicEntity, SensorEntity):
             and now_playing.artist != "unknown"
             and now_playing.title != "unknown"
         )
-        key = (now_playing.artist, now_playing.title) if resolvable else None
+        key = (
+            (now_playing.artist, now_playing.title, now_playing.media_content_id)
+            if resolvable
+            else None
+        )
         if key == self._liked_key:
             return
 
@@ -84,7 +91,7 @@ class NowPlayingSensor(MusicEntity, SensorEntity):
         if key is not None:
             self.hass.async_create_task(self._async_resolve_liked(key))
 
-    async def _async_resolve_liked(self, key: tuple[str, str]) -> None:
+    async def _async_resolve_liked(self, key: tuple[str, str, str | None]) -> None:
         """Resolve and store the liked state for the given track key."""
 
         state = await self._controller.async_resolve_now_playing_liked()

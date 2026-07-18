@@ -233,3 +233,73 @@ def test_sensor_sync_liked_skips_scheduling_without_spotify() -> None:
     assert scheduled == []
     assert sensor._liked_key is None
     assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_UNKNOWN
+
+
+def test_sensor_rechecks_liked_when_content_id_is_added(monkeypatch) -> None:
+    """A metadata revision adding the Spotify id re-resolves the heart (PR #44)."""
+
+    import asyncio
+
+    from homeassistant.components.media_player.const import ATTR_MEDIA_CONTENT_ID
+
+    state = _FakeState(
+        {
+            ATTR_MEDIA_ARTIST: "Artist A",
+            ATTR_MEDIA_TITLE: "Song A",
+            ATTR_MEDIA_CONTENT_ID: "radiobrowser://radio/kexp",
+        }
+    )
+    non_matching = {
+        "tracks": {
+            "items": [
+                {
+                    "id": "9",
+                    "uri": "spotify:track:9",
+                    "name": "Different",
+                    "artists": [{"name": "Someone Else"}],
+                    "album": None,
+                }
+            ]
+        }
+    }
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get={"media_player.office": state}.get),
+        services=_RoutedServices(
+            {
+                "search_tracks": non_matching,
+                "check_track_favorites": {"result": {"spotify:track:abc": True}},
+            }
+        ),
+    )
+    entry = SimpleNamespace(
+        entry_id="test",
+        domain="btoddb_ha_music",
+        data={
+            "speakers": {"Office": "media_player.office"},
+            "radio_stations": {},
+            "playlists": {},
+            "spotify_entity": "media_player.spotifyplus",
+        },
+        options={},
+    )
+    sensor = NowPlayingSensor(MusicController(hass, entry))
+    sensor.async_write_ha_state = lambda: None
+
+    scheduled: list = []
+    sensor.hass = SimpleNamespace(async_create_task=scheduled.append)
+
+    def run_scheduled() -> None:
+        while scheduled:
+            asyncio.run(scheduled.pop(0))
+
+    # First pass: no Spotify id, fuzzy search finds no match -> unknown.
+    sensor._sync_liked()
+    run_scheduled()
+    assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_UNKNOWN
+
+    # Music Assistant attaches the exact Spotify track id; the key changes, so
+    # a fresh lookup runs and flips the heart to liked.
+    state.attributes[ATTR_MEDIA_CONTENT_ID] = "spotify://track/abc"
+    sensor._sync_liked()
+    run_scheduled()
+    assert sensor.extra_state_attributes["now_playing_liked"] == LIKED_STATE_LIKED

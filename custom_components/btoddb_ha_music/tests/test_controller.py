@@ -1916,3 +1916,79 @@ def test_confirm_like_clears_liked_cache() -> None:
     controller.selected_like_candidate = controller.like_candidates[0]
     asyncio.run(controller.async_confirm_like())
     assert controller._liked_cache == {}
+
+
+_NON_MATCHING_SEARCH = {
+    "tracks": {
+        "items": [
+            {
+                "id": "9",
+                "uri": "spotify:track:9",
+                "name": "Different",
+                "artists": [{"name": "Someone Else"}],
+                "album": {"name": "Album"},
+            }
+        ]
+    }
+}
+
+
+def test_resolve_liked_rechecks_when_content_id_arrives_later() -> None:
+    """A fuzzy 'unknown' is not sticky: a later exact id resolves afresh (PR #44)."""
+
+    state = _FakeState(
+        {
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "radiobrowser://radio/kexp",
+        }
+    )
+    hass = _RoutedHass(
+        responses={
+            "search_tracks": _NON_MATCHING_SEARCH,
+            "check_track_favorites": _favorites(xyz=True),
+        }
+    )
+    hass.states = SimpleNamespace(get={"media_player.office": state}.get)
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+    )
+
+    # No Spotify id yet: fuzzy search finds no artist+title match -> unknown.
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_UNKNOWN
+    )
+
+    # Music Assistant later attaches the exact Spotify track id.
+    state.attributes[ATTR_MEDIA_CONTENT_ID] = "spotify://track/xyz"
+    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+
+
+def test_resolve_liked_does_not_collide_distinct_recordings() -> None:
+    """Two recordings sharing artist/title cache under their own track ids."""
+
+    state = _FakeState(
+        {
+            ATTR_MEDIA_ARTIST: "Artist",
+            ATTR_MEDIA_TITLE: "Song",
+            ATTR_MEDIA_CONTENT_ID: "spotify://track/aaa",
+        }
+    )
+    hass = _RoutedHass(
+        responses={"check_track_favorites": _favorites(aaa=True, bbb=False)}
+    )
+    hass.states = SimpleNamespace(get={"media_player.office": state}.get)
+    controller = _like_controller(
+        hass,
+        speakers={"Office": "media_player.office"},
+        spotify_entity="media_player.spotifyplus",
+    )
+
+    assert asyncio.run(controller.async_resolve_now_playing_liked()) == LIKED_STATE_LIKED
+    state.attributes[ATTR_MEDIA_CONTENT_ID] = "spotify://track/bbb"
+    assert (
+        asyncio.run(controller.async_resolve_now_playing_liked())
+        == LIKED_STATE_NOT_LIKED
+    )
