@@ -326,6 +326,13 @@ class MusicController:
         """
 
         entity_ids = self._resolve_active_targets(speakers=speakers)
+        if speakers is None:
+            # media_stop to a synced member stalls ~30s inside Music Assistant
+            # before the member reports idle, and the blocking call waits for
+            # every target — so stopping a sync group hung the card's Stop
+            # button long after the audio went silent. One stop per active
+            # queue still stops everything.
+            entity_ids = self._collapse_queue_targets(entity_ids)
         self._set_playing_kind(None)
         self._set_paused_entity_ids([])
         if not entity_ids:

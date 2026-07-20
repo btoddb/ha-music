@@ -661,6 +661,83 @@ def test_stop_music_explicit_target_is_not_filtered() -> None:
     assert data["entity_id"] == ["media_player.idle_speaker"]
 
 
+def test_stop_music_collapses_group_members_onto_group_player() -> None:
+    """Synced members sharing the group's queue are not sent the stop call.
+
+    media_stop to a synced member stalls ~30s inside Music Assistant before
+    the member reports idle, and the blocking service call waits for every
+    target — so stopping a sync group hung the Stop button long after the
+    audio went silent. One stop per active queue stops everything.
+    """
+
+    states = {
+        "media_player.kitchen": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+        "media_player.main_floor": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "group"},
+            state="playing",
+        ),
+        "media_player.office": _FakeState(
+            {"active_queue": "queue_office", "mass_player_type": "player"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "Main Floor": "media_player.main_floor",
+            "Kitchen": "media_player.kitchen",
+            "Office": "media_player.office",
+        },
+    )
+
+    asyncio.run(controller.async_stop_music())
+
+    assert len(hass.services.calls) == 1
+    _domain, service, data, _blocking, _ret = hass.services.calls[0]
+    assert service == "media_stop"
+    assert data["entity_id"] == ["media_player.main_floor", "media_player.office"]
+
+
+def test_stop_music_explicit_target_is_not_collapsed() -> None:
+    """An explicit target list is passed through without queue collapsing."""
+
+    states = {
+        "media_player.kitchen": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "player"},
+            state="playing",
+        ),
+        "media_player.main_floor": _FakeState(
+            {"active_queue": "syncgroup_1", "mass_player_type": "group"},
+            state="playing",
+        ),
+    }
+    hass = _FakeHass(states=states)
+    controller = _stop_controller(
+        hass,
+        speakers={
+            "Main Floor": "media_player.main_floor",
+            "Kitchen": "media_player.kitchen",
+        },
+    )
+
+    asyncio.run(
+        controller.async_stop_music(
+            speakers=["media_player.kitchen", "media_player.main_floor"]
+        )
+    )
+
+    assert len(hass.services.calls) == 1
+    _domain, _service, data, _blocking, _ret = hass.services.calls[0]
+    assert sorted(data["entity_id"]) == [
+        "media_player.kitchen",
+        "media_player.main_floor",
+    ]
+
+
 def test_next_track_no_target_skips_only_active_speakers() -> None:
     """With no target, only actively-playing speakers receive the next_track call."""
 
