@@ -94,6 +94,14 @@ describe(CARD_TYPE, () => {
     expect(customElements.get(CARD_TYPE)).toBeDefined();
   });
 
+  it("lists itself in the card picker as 'BToddB Music'", () => {
+    const cards = (window as unknown as { customCards?: { type: string; name: string }[] })
+      .customCards;
+    expect(cards).toContainEqual(
+      expect.objectContaining({ type: CARD_TYPE, name: "BToddB Music" })
+    );
+  });
+
   it("renders header and sections in the issue-specified order", () => {
     const card = makeCard(makeHass());
     const root = shadow(card);
