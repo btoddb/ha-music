@@ -1072,7 +1072,7 @@ if (!customElements.get(CARD_TYPE)) {
   (window as unknown as Record<string, unknown[]>)["customCards"] ??= [];
   ((window as unknown as Record<string, unknown[]>)["customCards"]).push({
     type: CARD_TYPE,
-    name: "HA Music — Like Card",
+    name: "BToddB Music",
     description:
       "Now playing, music source and speaker selection, playback controls, and Spotify likes.",
   });
